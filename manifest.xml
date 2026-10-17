@@ -13,7 +13,7 @@
   <SupportUrl DefaultValue="https://github.com/CMAUNK/controle-devolucao" />
   <Hosts><Host Name="Workbook" /></Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/taskpane.html" />
+    <SourceLocation DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/taskpane.html?v=1.1.0" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 </OfficeApp>
