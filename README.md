@@ -12,4 +12,4 @@ Este suplemento importa no Excel as linhas TSV exportadas pelo aplicativo Contro
 
 O suplemento associa dados pelos cabeçalhos e escreve na pasta de trabalho ativa pelo Office JavaScript API. Ele não envia o conteúdo do TSV ou da planilha para um servidor. O código hospedado aqui é público; não inclua arquivos de dados, PDFs, credenciais ou tokens neste repositório.
 
-Na BASE-RECEBENDO, a fórmula de Aging é aplicada às linhas adicionadas. Confira o destino e as duplicatas antes de confirmar a importação.
+O suplemento reutiliza linhas vazias já existentes na tabela antes de criar linhas novas. Detecta colunas com fórmulas e preserva as fórmulas já existentes; quando adiciona linhas novas, copia as fórmulas da tabela para manter os cálculos com referências ajustadas pelo Excel. Confira o destino e as duplicatas antes de confirmar a importação.
