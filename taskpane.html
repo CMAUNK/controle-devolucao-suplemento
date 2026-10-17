@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Manifestos Jadlog</title>
-  <link rel="stylesheet" href="taskpane.css">
+  <link rel="stylesheet" href="taskpane.css?v=1.1.0">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script defer src="taskpane.js"></script>
+  <script defer src="taskpane.js?v=1.1.0"></script>
 </head>
 <body>
   <main>
@@ -23,7 +23,19 @@
     <input id="inputFile" type="file" accept=".tsv,.txt,text/tab-separated-values">
     <div id="preview" class="panel muted">Selecione um arquivo para ver uma prévia.</div>
 
-    <button id="addRows" disabled>Adicionar linhas na tabela</button>
+    <div class="actions">
+      <button id="addRows" disabled>Adicionar linhas na tabela</button>
+      <button id="clearSelection" class="secondary" disabled>Limpar arquivo</button>
+    </div>
+    <section id="duplicateWarning" class="panel warning hidden" role="alert" aria-live="assertive">
+      <strong>Manifesto(s) já encontrado(s)</strong>
+      <p id="duplicateText"></p>
+      <p>Quer inserir essas linhas mesmo assim? Isso pode criar registros duplicados na base.</p>
+      <div class="actions">
+        <button id="confirmDuplicates">Adicionar mesmo assim</button>
+        <button id="cancelDuplicates" class="secondary">Cancelar</button>
+      </div>
+    </section>
     <div id="status" role="status" aria-live="polite"></div>
     <p class="note">Os cabeçalhos do arquivo são usados para encontrar as colunas. Campos que não vierem no arquivo ficam sem alteração; a fórmula de Aging será aplicada nas novas linhas da BASE-RECEBENDO.</p>
   </main>

@@ -1,14 +1,15 @@
 # Suplemento do Excel — Controle Devolução
 
-Este suplemento permite importar para uma tabela do Excel as linhas TSV exportadas pelo aplicativo Controle Devolução.
+Este suplemento importa no Excel as linhas TSV exportadas pelo aplicativo Controle Devolução.
 
 ## Uso
 
 1. No aplicativo, baixe o arquivo TSV da base RECEBENDO ou EXPEDINDO.
-2. Abra a planilha de trabalho no Excel Online e carregue `manifest.xml` em **Suplementos → Carregar Meu Suplemento**.
-3. No painel do suplemento, escolha a base correspondente, selecione o TSV e confira a prévia.
-4. Clique em **Adicionar linhas na tabela** para inserir os registros na tabela da aba correspondente.
+2. No painel do Excel, selecione a mesma base e o TSV correspondente.
+3. Confira a prévia e clique em **Adicionar linhas na tabela**.
+4. Se algum manifesto já existir ou se repetir no arquivo, o suplemento mostra um aviso e permite cancelar ou confirmar a inclusão das duplicatas.
+5. Use **Limpar arquivo** para remover a seleção e a prévia do painel; isso não apaga linhas da planilha.
 
-Os dados são lidos no navegador e escritos na pasta de trabalho ativa pelo Office JavaScript API. O suplemento não envia o conteúdo do TSV ou da planilha a um servidor. O código hospedado aqui é público; não inclua arquivos de dados, PDFs, credenciais ou tokens neste repositório.
+O suplemento associa dados pelos cabeçalhos e escreve na pasta de trabalho ativa pelo Office JavaScript API. Ele não envia o conteúdo do TSV ou da planilha para um servidor. O código hospedado aqui é público; não inclua arquivos de dados, PDFs, credenciais ou tokens neste repositório.
 
-O suplemento associa valores pelos nomes dos cabeçalhos, conserva os campos que não vierem no arquivo e aplica a fórmula de Aging nas novas linhas de BASE-RECEBENDO. Antes do uso na planilha oficial, valide o fluxo em uma cópia e confira os nomes das tabelas e colunas.
+Na BASE-RECEBENDO, a fórmula de Aging é aplicada às linhas adicionadas. Confira o destino e as duplicatas antes de confirmar a importação.

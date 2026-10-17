@@ -1,13 +1,19 @@
 /* global Office, Excel */
 "use strict";
 
-const state = { records: [], headers: [], fileName: "" };
+const state = { records: [], headers: [], fileName: "", importing: false };
 const $ = (id) => document.getElementById(id);
 
 Office.onReady(() => {
   $("inputFile").addEventListener("change", readSelectedFile);
   $("base").addEventListener("change", renderPreview);
   $("addRows").addEventListener("click", insertRows);
+  $("clearSelection").addEventListener("click", clearSelection);
+  $("confirmDuplicates").addEventListener("click", () => insertRows(true));
+  $("cancelDuplicates").addEventListener("click", () => {
+    hideDuplicateWarning();
+    clearStatus();
+  });
 });
 
 function parseTSV(text) {
@@ -38,9 +44,13 @@ function parseTSV(text) {
 
 async function readSelectedFile() {
   clearStatus();
+  hideDuplicateWarning();
   const file = $("inputFile").files[0];
   state.records = [];
   state.headers = [];
+  state.fileName = "";
+  $("addRows").disabled = true;
+  $("clearSelection").disabled = !file;
   if (!file) { renderPreview(); return; }
   try {
     const parsed = parseTSV(await file.text());
@@ -48,6 +58,7 @@ async function readSelectedFile() {
     state.headers = parsed.headers;
     state.fileName = file.name;
     $("addRows").disabled = false;
+    $("clearSelection").disabled = false;
     renderPreview();
   } catch (error) {
     $("addRows").disabled = true;
@@ -57,7 +68,10 @@ async function readSelectedFile() {
 }
 
 function renderPreview() {
-  if (!state.records.length) return;
+  if (!state.records.length) {
+    $("preview").textContent = "Selecione um arquivo para ver uma prévia.";
+    return;
+  }
   const base = $("base").value;
   const manifestoKey = "MANIFESTO";
   const volumesKey = "VOLUMES";
@@ -87,13 +101,43 @@ function excelDateSerial(value) {
   return (date.getTime() - Date.UTC(1899, 11, 30)) / 86400000;
 }
 
-async function insertRows() {
+function showDuplicateWarning(manifestos) {
+  $("duplicateText").textContent = manifestos.join(", ");
+  $("duplicateWarning").classList.remove("hidden");
+}
+
+function hideDuplicateWarning() {
+  $("duplicateWarning").classList.add("hidden");
+  $("duplicateText").textContent = "";
+}
+
+function clearSelection() {
+  if (state.importing) return;
+  $("inputFile").value = "";
+  state.records = [];
+  state.headers = [];
+  state.fileName = "";
+  $("addRows").disabled = true;
+  $("clearSelection").disabled = true;
+  hideDuplicateWarning();
+  clearStatus();
+  renderPreview();
+}
+
+async function insertRows(confirmDuplicates = false) {
+  if (state.importing) return;
+  state.importing = true;
   $("addRows").disabled = true;
   clearStatus();
+  if (confirmDuplicates) hideDuplicateWarning();
   try {
     const base = $("base").value;
+    const expectedTransferHeader = base === "recebendo" ? "DATA DE TRASFERENCIA" : "DT DE TRASFERENCIA";
+    if (!state.headers.some((header) => normalizeHeader(header) === normalizeHeader(expectedTransferHeader))) {
+      throw new Error(`O arquivo não corresponde à base ${base === "recebendo" ? "RECEBENDO" : "EXPEDINDO"}. Selecione o TSV dessa base.`);
+    }
     const sheetName = base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO";
-    await Excel.run(async (context) => {
+    const result = await Excel.run(async (context) => {
       const sheet = context.workbook.worksheets.getItem(sheetName);
       const tables = sheet.tables;
       tables.load("items/name");
@@ -149,13 +193,14 @@ async function insertRows() {
         manifestValues.values.flat().map((value) => String(value || "").trim()).filter(Boolean)
           .forEach((value) => existing.add(value));
       }
+      const duplicateManifestos = [];
       for (const record of state.records) {
         const number = String(record[inputManifestHeader] || "").trim();
-        if (existing.has(number) || duplicates.has(number)) {
-          throw new Error(`O manifesto ${number} já aparece na tabela ou está repetido no arquivo. Nenhuma linha foi inserida.`);
-        }
+        if (existing.has(number) || duplicates.has(number)) duplicateManifestos.push(number);
         duplicates.add(number);
       }
+      const duplicateList = [...new Set(duplicateManifestos)];
+      if (duplicateList.length && !confirmDuplicates) return { needsConfirmation: duplicateList };
 
       const firstDataRow = fullRange.rowIndex + 1 + existingCount;
       table.rows.add(-1, data, true);
@@ -167,12 +212,19 @@ async function insertRows() {
         agingCell.formulas = [[`=IF(${transferCell}="","",IF(TODAY()-${transferCell}>=6,"D5+","D"&MAX(0,TODAY()-${transferCell})))`]];
       }
       await context.sync();
+      return { inserted: true };
     });
+    if (result.needsConfirmation) {
+      showDuplicateWarning(result.needsConfirmation);
+      return;
+    }
     setStatus(`${state.records.length} linha(s) adicionada(s) à ${base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO"}.`, false, true);
   } catch (error) {
     setStatus(error.message || "Não foi possível adicionar as linhas.", true);
   } finally {
+    state.importing = false;
     $("addRows").disabled = !state.records.length;
+    $("clearSelection").disabled = !$("inputFile").files.length;
   }
 }
 
