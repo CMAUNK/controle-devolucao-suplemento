@@ -1,16 +1,24 @@
 /* global Office, Excel */
 "use strict";
 
-const state = { records: [], headers: [], fileName: "", importing: false };
+const state = { records: [], headers: [], fileName: "", importing: false, plan: null };
 const $ = (id) => document.getElementById(id);
 
 Office.onReady(() => {
   $("inputFile").addEventListener("change", readSelectedFile);
-  $("base").addEventListener("change", renderPreview);
-  $("addRows").addEventListener("click", insertRows);
+  $("base").addEventListener("change", () => {
+    hideReview();
+    clearStatus();
+    renderPreview();
+  });
+  $("addRows").addEventListener("click", prepareInsertion);
   $("clearSelection").addEventListener("click", clearSelection);
-  $("confirmDuplicates").addEventListener("click", () => insertRows(true));
-  $("cancelDuplicates").addEventListener("click", () => { hideDuplicateWarning(); clearStatus(); });
+  $("confirmNewOnly").addEventListener("click", () => insertRows("new"));
+  $("confirmAll").addEventListener("click", () => insertRows("all"));
+  $("cancelReview").addEventListener("click", () => {
+    hideReview();
+    clearStatus();
+  });
 });
 
 function parseTSV(text) {
@@ -33,36 +41,100 @@ function parseTSV(text) {
   if (quoted) throw new Error("O arquivo TSV parece estar incompleto: há aspas sem fechamento.");
   if (rows.length < 2) throw new Error("O arquivo não contém linhas de dados.");
   const headers = rows[0].map((value) => value.replace(/^\uFEFF/, "").trim());
-  const records = rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
+  const records = rows.slice(1).map((values) => Object.fromEntries(
+    headers.map((header, index) => [header, values[index] ?? ""])
+  ));
   return { headers, records };
 }
 
 async function readSelectedFile() {
-  clearStatus(); hideDuplicateWarning();
+  clearStatus();
+  hideReview();
   const file = $("inputFile").files[0];
-  state.records = []; state.headers = []; state.fileName = "";
-  $("addRows").disabled = true; $("clearSelection").disabled = !file;
+  state.records = [];
+  state.headers = [];
+  state.fileName = "";
+  $("addRows").disabled = true;
+  $("clearSelection").disabled = !file;
   if (!file) { renderPreview(); return; }
   try {
     const parsed = parseTSV(await file.text());
-    state.records = parsed.records; state.headers = parsed.headers; state.fileName = file.name;
-    $("addRows").disabled = false; $("clearSelection").disabled = false; renderPreview();
+    state.records = parsed.records;
+    state.headers = parsed.headers;
+    state.fileName = file.name;
+    $("addRows").disabled = false;
+    $("clearSelection").disabled = false;
+    renderPreview();
   } catch (error) {
-    $("addRows").disabled = true; setStatus(error.message, true);
+    $("addRows").disabled = true;
+    setStatus(error.message, true);
     $("preview").textContent = "Não foi possível ler o arquivo.";
   }
 }
 
 function renderPreview() {
-  if (!state.records.length) { $("preview").textContent = "Selecione um arquivo para ver uma prévia."; return; }
+  if (!state.records.length) {
+    $("preview").textContent = "Selecione um arquivo para ver uma prévia.";
+    $("previewRows").replaceChildren();
+    $("previewRows").classList.add("hidden");
+    return;
+  }
   const base = $("base").value;
-  const manifestos = state.records.map((row) => row.MANIFESTO).filter(Boolean);
-  const totalVolumes = state.records.reduce((sum, row) => sum + (Number(row.VOLUMES) || 0), 0);
-  $("preview").textContent = state.fileName + "\nDestino: BASE-" + base.toUpperCase() + "\nLinhas: " + state.records.length + "\nManifestos: " + (manifestos.join(", ") || "não identificados") + "\nVolumes somados: " + totalVolumes;
+  const manifestoKey = "MANIFESTO";
+  const volumesKey = "VOLUMES";
+  const manifestos = state.records.map((row) => row[manifestoKey]).filter(Boolean);
+  const totalVolumes = state.records.reduce((sum, row) => sum + (Number(row[volumesKey]) || 0), 0);
+  $("preview").textContent = `${state.fileName}\nDestino: BASE-${base.toUpperCase()}\nLinhas no arquivo: ${state.records.length}\nManifestos: ${manifestos.join(", ") || "não identificados"}\nVolumes somados: ${totalVolumes}`;
+  renderSampleRows();
+}
+
+function renderSampleRows() {
+  const container = $("previewRows");
+  container.replaceChildren();
+  const visibleHeaders = state.headers.slice(0, 6);
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const header of visibleHeaders) {
+    const th = document.createElement("th");
+    th.textContent = header;
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  for (const record of state.records.slice(0, 5)) {
+    const row = document.createElement("tr");
+    for (const header of visibleHeaders) {
+      const cell = document.createElement("td");
+      cell.textContent = String(record[header] ?? "");
+      row.appendChild(cell);
+    }
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+  container.appendChild(table);
+  if (state.records.length > 5) {
+    const note = document.createElement("div");
+    note.className = "sample-note";
+    note.textContent = `Exibindo as primeiras 5 de ${state.records.length} linhas.`;
+    container.appendChild(note);
+  }
+  container.classList.remove("hidden");
 }
 
 function normalizeHeader(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+}
+
+function columnLetter(zeroBased) {
+  let n = zeroBased + 1, result = "";
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
 }
 
 function excelDateSerial(value) {
@@ -72,147 +144,256 @@ function excelDateSerial(value) {
   return (date.getTime() - Date.UTC(1899, 11, 30)) / 86400000;
 }
 
-function showDuplicateWarning(manifestos) {
-  $("duplicateText").textContent = manifestos.join(", ");
-  $("duplicateWarning").classList.remove("hidden");
+function hideReview() {
+  state.plan = null;
+  $("review").classList.add("hidden");
+  $("duplicateWarning").classList.add("hidden");
+  $("duplicateText").textContent = "";
+  $("reviewSummary").replaceChildren();
 }
-function hideDuplicateWarning() {
-  $("duplicateWarning").classList.add("hidden"); $("duplicateText").textContent = "";
-}
+
 function clearSelection() {
   if (state.importing) return;
-  $("inputFile").value = ""; state.records = []; state.headers = []; state.fileName = "";
-  $("addRows").disabled = true; $("clearSelection").disabled = true;
-  hideDuplicateWarning(); clearStatus(); renderPreview();
+  $("inputFile").value = "";
+  state.records = [];
+  state.headers = [];
+  state.fileName = "";
+  hideReview();
+  $("addRows").disabled = true;
+  $("clearSelection").disabled = true;
+  clearStatus();
+  renderPreview();
 }
 
-async function insertRows(confirmDuplicates = false) {
-  if (state.importing) return;
-  state.importing = true; $("addRows").disabled = true; clearStatus();
-  if (confirmDuplicates) hideDuplicateWarning();
-  try {
-    const base = $("base").value;
-    const expectedTransferHeader = base === "recebendo" ? "DATA DE TRASFERENCIA" : "DT DE TRASFERENCIA";
-    if (!state.headers.some((header) => normalizeHeader(header) === normalizeHeader(expectedTransferHeader))) {
-      throw new Error("O arquivo não corresponde à base " + (base === "recebendo" ? "RECEBENDO" : "EXPEDINDO") + ". Selecione o TSV dessa base.");
+function ensureFileMatchesBase(base) {
+  const expected = base === "recebendo" ? "DATA DE TRASFERENCIA" : "DT DE TRASFERENCIA";
+  if (!state.headers.some((header) => normalizeHeader(header) === normalizeHeader(expected))) {
+    throw new Error(`O arquivo não corresponde à base ${base === "recebendo" ? "RECEBENDO" : "EXPEDINDO"}. Selecione o TSV dessa base.`);
+  }
+}
+
+async function inspectOrInsert(mode = null) {
+  const base = $("base").value;
+  ensureFileMatchesBase(base);
+  const sheetName = base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO";
+  return Excel.run(async (context) => {
+    const sheet = context.workbook.worksheets.getItem(sheetName);
+    const tables = sheet.tables;
+    tables.load("items/name");
+    await context.sync();
+    if (!tables.items.length) throw new Error(`Não encontrei uma tabela na aba ${sheetName}.`);
+    if (tables.items.length > 1) throw new Error(`Há mais de uma tabela na aba ${sheetName}; não vou escolher uma automaticamente.`);
+
+    const table = tables.getItemAt(0);
+    const headerRange = table.getHeaderRowRange();
+    headerRange.load("values");
+    const countResult = table.rows.getCount();
+    await context.sync();
+    const existingCount = countResult.value;
+    const headers = headerRange.values[0].map((value) => String(value || "").trim());
+    const columnMap = new Map(headers.map((header, index) => [normalizeHeader(header), index]));
+    const manifestColumn = columnMap.get("MANIFESTO");
+    if (manifestColumn === undefined) throw new Error(`Não encontrei a coluna MANIFESTO na tabela da aba ${sheetName}.`);
+    const inputManifestHeader = state.headers.find((header) => normalizeHeader(header) === "MANIFESTO");
+    if (!inputManifestHeader) throw new Error("O arquivo não tem a coluna MANIFESTO.");
+
+    const mappedInputColumns = new Map();
+    for (const record of state.records) {
+      if (!String(record[inputManifestHeader] || "").trim()) throw new Error("Há uma linha sem número de manifesto; revise o arquivo antes de inserir.");
+      for (const inputHeader of Object.keys(record)) {
+        const targetColumn = columnMap.get(normalizeHeader(inputHeader));
+        if (targetColumn !== undefined) mappedInputColumns.set(normalizeHeader(inputHeader), targetColumn);
+      }
     }
-    const sheetName = base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO";
-    const result = await Excel.run(async (context) => {
-      const sheet = context.workbook.worksheets.getItem(sheetName);
-      const tables = sheet.tables; tables.load("items/name"); await context.sync();
-      if (!tables.items.length) throw new Error("Não encontrei uma tabela na aba " + sheetName + ".");
-      if (tables.items.length > 1) throw new Error("Há mais de uma tabela na aba " + sheetName + "; não vou escolher uma automaticamente.");
-      const table = tables.getItemAt(0);
-      const headerRange = table.getHeaderRowRange(); headerRange.load("values");
-      const existingCountResult = table.rows.getCount(); await context.sync();
-      const existingCount = existingCountResult.value;
-      const headers = headerRange.values[0].map((value) => String(value || "").trim());
-      const columnMap = new Map(headers.map((header, index) => [normalizeHeader(header), index]));
-      const manifestColumn = columnMap.get("MANIFESTO");
-      if (manifestColumn === undefined) throw new Error("Não encontrei a coluna MANIFESTO na tabela da aba " + sheetName + ".");
-      const inputManifestHeader = state.headers.find((header) => normalizeHeader(header) === "MANIFESTO");
-      if (!inputManifestHeader) throw new Error("O arquivo não tem a coluna MANIFESTO.");
-
-      const mappedInputColumns = new Set();
-      for (const record of state.records) {
-        if (!String(record[inputManifestHeader] || "").trim()) throw new Error("Há uma linha sem número de manifesto; revise o arquivo antes de inserir.");
-        for (const inputHeader of Object.keys(record)) {
-          const targetColumn = columnMap.get(normalizeHeader(inputHeader));
-          if (targetColumn !== undefined) mappedInputColumns.add(targetColumn);
-        }
-      }
-      const inputValues = state.records.map((record) => {
-        const values = new Map();
-        for (const [inputHeader, rawValue] of Object.entries(record)) {
-          const targetColumn = columnMap.get(normalizeHeader(inputHeader));
-          if (targetColumn === undefined || rawValue === "" || rawValue == null) continue;
-          let value = rawValue;
-          const normalized = normalizeHeader(inputHeader);
-          if (normalized === normalizeHeader("DATA DE TRASFERENCIA") || normalized === normalizeHeader("DT DE TRASFERENCIA")) value = excelDateSerial(rawValue);
-          values.set(targetColumn, value);
-        }
-        return values;
-      });
-
-      const existing = new Set();
-      if (existingCount > 0) {
-        const manifestValues = table.columns.getItemAt(manifestColumn).getDataBodyRange();
-        manifestValues.load("values"); await context.sync();
-        manifestValues.values.flat().map((value) => String(value || "").trim()).filter(Boolean).forEach((value) => existing.add(value));
-      }
-      const duplicates = new Set(), duplicateManifestos = [];
-      for (const record of state.records) {
-        const number = String(record[inputManifestHeader] || "").trim();
-        if (existing.has(number) || duplicates.has(number)) duplicateManifestos.push(number);
-        duplicates.add(number);
-      }
-      const duplicateList = [...new Set(duplicateManifestos)];
-      if (duplicateList.length && !confirmDuplicates) return { needsConfirmation: duplicateList };
-
-      const bodyRange = existingCount ? table.getDataBodyRange() : null;
-      let bodyValues = [], bodyFormulas = [];
-      if (bodyRange) {
-        bodyRange.load("values,formulas"); await context.sync();
-        bodyValues = bodyRange.values; bodyFormulas = bodyRange.formulas;
-      }
-      const formulaColumns = new Set(), formulaTemplateRows = new Map();
-      for (let row = 0; row < bodyFormulas.length; row += 1) {
-        for (let col = 0; col < headers.length; col += 1) {
-          const formula = bodyFormulas[row]?.[col];
-          if (typeof formula === "string" && formula.startsWith("=")) {
-            formulaColumns.add(col); formulaTemplateRows.set(col, row);
-          }
-        }
-      }
-      const reusableRows = [];
-      for (let row = 0; row < existingCount; row += 1) {
-        const hasIncomingData = [...mappedInputColumns].some((col) => {
-          if (formulaColumns.has(col)) return false;
-          const value = bodyValues[row]?.[col];
-          return value !== null && value !== undefined && String(value).trim() !== "";
-        });
-        const manifestValue = bodyValues[row]?.[manifestColumn];
-        if (!hasIncomingData && String(manifestValue ?? "").trim() === "") reusableRows.push(row);
-      }
-      const assignments = [];
-      const reusedCount = Math.min(reusableRows.length, inputValues.length);
-      for (let i = 0; i < reusedCount; i += 1) assignments.push({ row: reusableRows[i], values: inputValues[i], existing: true });
-      const appendCount = inputValues.length - reusedCount;
-      if (appendCount > 0) {
-        const blankRows = Array.from({ length: appendCount }, () => new Array(headers.length).fill(""));
-        const added = table.rows.add(-1, blankRows, true); added.load("index"); await context.sync();
-        for (let i = 0; i < appendCount; i += 1) assignments.push({ row: added.index + i, values: inputValues[reusedCount + i], existing: false });
-      }
-      for (const assignment of assignments) {
-        for (const [col, value] of assignment.values) {
-          if (!formulaColumns.has(col)) table.getDataBodyRange().getCell(assignment.row, col).values = [[value]];
-        }
-        for (const col of formulaColumns) {
-          const target = table.getDataBodyRange().getCell(assignment.row, col);
-          const alreadyHasFormula = assignment.existing && typeof bodyFormulas[assignment.row]?.[col] === "string" && bodyFormulas[assignment.row][col].startsWith("=");
-          const templateRow = formulaTemplateRows.get(col);
-          if (!alreadyHasFormula && templateRow !== undefined && templateRow !== assignment.row) {
-            target.copyFrom(table.getDataBodyRange().getCell(templateRow, col), Excel.RangeCopyType.formulas);
-          }
-        }
-      }
+    const existing = new Set();
+    if (existingCount > 0) {
+      const manifestValues = table.columns.getItemAt(manifestColumn).getDataBodyRange();
+      manifestValues.load("values");
       await context.sync();
-      return { count: inputValues.length, reused: reusedCount };
+      manifestValues.values.flat().map((value) => String(value || "").trim()).filter(Boolean).forEach((value) => existing.add(value));
+    }
+    const seenInFile = new Set();
+    const duplicateList = [];
+    const newRecordIndexes = [];
+    state.records.forEach((record, index) => {
+      const number = String(record[inputManifestHeader] || "").trim();
+      if (existing.has(number) || seenInFile.has(number)) duplicateList.push(number);
+      else newRecordIndexes.push(index);
+      seenInFile.add(number);
     });
-    if (result.needsConfirmation) { showDuplicateWarning(result.needsConfirmation); return; }
-    const baseName = base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO";
-    const reusedText = result.reused ? " " + result.reused + " linha(s) vazia(s) existente(s) foram reutilizadas; fórmulas preservadas." : " Fórmulas existentes da tabela foram mantidas e copiadas quando disponíveis.";
-    setStatus(result.count + " linha(s) preenchida(s) na " + baseName + "." + reusedText, false, true);
+
+    const bodyRange = existingCount ? table.getDataBodyRange() : null;
+    let bodyValues = [], bodyFormulas = [];
+    if (bodyRange) {
+      bodyRange.load("values,formulas");
+      await context.sync();
+      bodyValues = bodyRange.values;
+      bodyFormulas = bodyRange.formulas;
+    }
+    const formulaColumns = new Set();
+    const formulaTemplateRows = new Map();
+    bodyFormulas.forEach((row, rowIndex) => row.forEach((formula, col) => {
+      if (typeof formula === "string" && formula.startsWith("=")) {
+        formulaColumns.add(col);
+        formulaTemplateRows.set(col, rowIndex);
+      }
+    }));
+    const reusableRows = [];
+    for (let row = 0; row < existingCount; row += 1) {
+      const hasIncomingData = [...mappedInputColumns.values()].some((col) => {
+        if (formulaColumns.has(col)) return false;
+        const value = bodyValues[row]?.[col];
+        return value !== null && value !== undefined && String(value).trim() !== "";
+      });
+      if (!hasIncomingData && String(bodyValues[row]?.[manifestColumn] ?? "").trim() === "") reusableRows.push(row);
+    }
+
+    const candidateIndexes = mode === "new" ? newRecordIndexes : state.records.map((_, index) => index);
+    const reusedCount = Math.min(reusableRows.length, candidateIndexes.length);
+    const plan = {
+      base, sheetName, total: state.records.length, existingCount,
+      availableBlankRows: reusableRows.length,
+      count: candidateIndexes.length, reused: reusedCount,
+      appended: candidateIndexes.length - reusedCount,
+      duplicates: [...new Set(duplicateList)], newCount: newRecordIndexes.length,
+      formulas: [...formulaColumns].map((col) => headers[col]),
+      skipped: state.records.length - candidateIndexes.length,
+    };
+    if (mode === null || candidateIndexes.length === 0) return plan;
+    const previousPlan = state.plan;
+    const workbookChanged = !previousPlan || plan.existingCount !== previousPlan.existingCount ||
+      plan.availableBlankRows !== previousPlan.availableBlankRows ||
+      plan.duplicates.join("|") !== previousPlan.duplicates.join("|") ||
+      plan.formulas.join("|") !== previousPlan.formulas.join("|");
+    if (workbookChanged) return { ...plan, needsReview: true };
+
+    const inputValues = candidateIndexes.map((index) => {
+      const record = state.records[index];
+      const values = new Map();
+      for (const [inputHeader, rawValue] of Object.entries(record)) {
+        const targetColumn = columnMap.get(normalizeHeader(inputHeader));
+        if (targetColumn === undefined || rawValue === "" || rawValue == null) continue;
+        let value = rawValue;
+        if (["DATA DE TRASFERENCIA", "DT DE TRASFERENCIA"].includes(normalizeHeader(inputHeader))) value = excelDateSerial(rawValue);
+        values.set(targetColumn, value);
+      }
+      return values;
+    });
+    const assignments = [];
+    for (let i = 0; i < reusedCount; i += 1) assignments.push({ row: reusableRows[i], values: inputValues[i], existing: true });
+    if (plan.appended > 0) {
+      const blankRows = Array.from({ length: plan.appended }, () => new Array(headers.length).fill(""));
+      const added = table.rows.add(-1, blankRows, true);
+      added.load("index");
+      await context.sync();
+      for (let i = 0; i < plan.appended; i += 1) assignments.push({ row: added.index + i, values: inputValues[reusedCount + i], existing: false });
+    }
+    let preservedFormulas = 0, copiedFormulas = 0;
+    for (const assignment of assignments) {
+      for (const [col, value] of assignment.values) {
+        if (!formulaColumns.has(col)) table.getDataBodyRange().getCell(assignment.row, col).values = [[value]];
+      }
+      for (const col of formulaColumns) {
+        const target = table.getDataBodyRange().getCell(assignment.row, col);
+        const alreadyHasFormula = assignment.existing && typeof bodyFormulas[assignment.row]?.[col] === "string" && bodyFormulas[assignment.row][col].startsWith("=");
+        const templateRow = formulaTemplateRows.get(col);
+        if (alreadyHasFormula) preservedFormulas += 1;
+        else if (templateRow !== undefined && templateRow !== assignment.row) {
+          target.copyFrom(table.getDataBodyRange().getCell(templateRow, col), Excel.RangeCopyType.formulas);
+          copiedFormulas += 1;
+        }
+      }
+    }
+    await context.sync();
+    return { ...plan, preservedFormulas, copiedFormulas };
+  });
+}
+
+function addReviewLine(container, label, value) {
+  const line = document.createElement("p");
+  const strong = document.createElement("strong");
+  strong.textContent = `${label}: `;
+  line.append(strong, document.createTextNode(String(value)));
+  container.appendChild(line);
+}
+
+function showReview(plan) {
+  state.plan = plan;
+  const container = $("reviewSummary");
+  container.replaceChildren();
+  addReviewLine(container, "Destino", plan.sheetName);
+  addReviewLine(container, "Linhas selecionadas", state.records.length);
+  addReviewLine(container, "Linhas que serão inseridas", plan.count);
+  addReviewLine(container, "Linhas em branco que serão reutilizadas", plan.reused);
+  addReviewLine(container, "Novas linhas necessárias", plan.appended);
+  addReviewLine(container, "Fórmulas detectadas", plan.formulas.join(", ") || "nenhuma coluna com fórmula encontrada");
+  const hasDuplicates = plan.duplicates.length > 0;
+  $("duplicateWarning").classList.toggle("hidden", !hasDuplicates);
+  $("duplicateText").textContent = hasDuplicates ? plan.duplicates.join(", ") : "";
+  $("confirmNewOnly").classList.toggle("hidden", !hasDuplicates);
+  $("confirmNewOnly").textContent = `Inserir somente novos (${plan.newCount})`;
+  $("confirmAll").textContent = hasDuplicates ? "Inserir todos" : "Confirmar e inserir";
+  $("review").classList.remove("hidden");
+}
+
+async function prepareInsertion() {
+  if (state.importing || !state.records.length) return;
+  state.importing = true;
+  $("addRows").disabled = true;
+  clearStatus();
+  try {
+    const plan = await inspectOrInsert(null);
+    showReview(plan);
+    setStatus("Confira o destino, os duplicados e as linhas antes de confirmar.", false);
+  } catch (error) {
+    setStatus(error.message || "Não foi possível conferir a planilha.", true);
+  } finally {
+    state.importing = false;
+    $("addRows").disabled = !state.records.length;
+    $("clearSelection").disabled = !$("inputFile").files.length;
+  }
+}
+
+async function insertRows(mode) {
+  if (state.importing || !state.records.length) return;
+  state.importing = true;
+  $("addRows").disabled = true;
+  $("confirmNewOnly").disabled = true;
+  $("confirmAll").disabled = true;
+  clearStatus();
+  try {
+    const result = await inspectOrInsert(mode);
+    if (result.needsReview) {
+      showReview(result);
+      setStatus("A planilha mudou desde a conferência. Revise o resumo atualizado antes de confirmar.", false);
+      return;
+    }
+    if (result.count === 0) {
+      hideReview();
+      setStatus("Todos os manifestos deste arquivo já estão na tabela. Nenhuma linha foi inserida.", false);
+      return;
+    }
+    hideReview();
+    const skippedText = result.skipped ? ` ${result.skipped} duplicado(s) foram ignorados.` : "";
+    const formulaText = result.formulas.length
+      ? ` Fórmulas preservadas: ${result.preservedFormulas}; copiadas para novas linhas: ${result.copiedFormulas} (${result.formulas.join(", ")}).`
+      : " Não foram detectadas fórmulas na tabela.";
+    setStatus(`${result.count} linha(s) inserida(s) em ${result.sheetName}: ${result.reused} linha(s) em branco reutilizada(s) e ${result.appended} nova(s) criada(s).${skippedText}${formulaText}`, false, true);
   } catch (error) {
     setStatus(error.message || "Não foi possível adicionar as linhas.", true);
   } finally {
-    state.importing = false; $("addRows").disabled = !state.records.length;
+    state.importing = false;
+    $("addRows").disabled = !state.records.length;
+    $("confirmNewOnly").disabled = false;
+    $("confirmAll").disabled = false;
     $("clearSelection").disabled = !$("inputFile").files.length;
   }
 }
 
 function setStatus(message, isError, isSuccess = false) {
-  const status = $("status"); status.textContent = message;
+  const status = $("status");
+  status.textContent = message;
   status.className = isError ? "error" : (isSuccess ? "success" : "");
 }
+
 function clearStatus() { setStatus("", false); }
