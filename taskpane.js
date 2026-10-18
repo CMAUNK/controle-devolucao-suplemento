@@ -12,6 +12,7 @@ Office.onReady(() => {
     renderPreview();
   });
   $("addRows").addEventListener("click", prepareInsertion);
+  $("insertDirect").addEventListener("click", insertDirectly);
   $("clearSelection").addEventListener("click", clearSelection);
   $("confirmNewOnly").addEventListener("click", () => insertRows("new"));
   $("confirmAll").addEventListener("click", () => insertRows("all"));
@@ -55,6 +56,7 @@ async function readSelectedFile() {
   state.headers = [];
   state.fileName = "";
   $("addRows").disabled = true;
+  $("insertDirect").disabled = true;
   $("clearSelection").disabled = !file;
   if (!file) { renderPreview(); return; }
   try {
@@ -63,10 +65,12 @@ async function readSelectedFile() {
     state.headers = parsed.headers;
     state.fileName = file.name;
     $("addRows").disabled = false;
+    $("insertDirect").disabled = false;
     $("clearSelection").disabled = false;
     renderPreview();
   } catch (error) {
     $("addRows").disabled = true;
+    $("insertDirect").disabled = true;
     setStatus(error.message, true);
     $("preview").textContent = "Não foi possível ler o arquivo.";
   }
@@ -183,6 +187,7 @@ function clearSelection() {
   state.fileName = "";
   hideReview();
   $("addRows").disabled = true;
+  $("insertDirect").disabled = true;
   $("clearSelection").disabled = true;
   clearStatus();
   renderPreview();
@@ -417,6 +422,7 @@ async function prepareInsertion() {
   if (state.importing || !state.records.length) return;
   state.importing = true;
   $("addRows").disabled = true;
+  $("insertDirect").disabled = true;
   clearStatus();
   try {
     const plan = await inspectOrInsert(null);
@@ -427,6 +433,47 @@ async function prepareInsertion() {
   } finally {
     state.importing = false;
     $("addRows").disabled = !state.records.length;
+    $("insertDirect").disabled = !state.records.length;
+    $("clearSelection").disabled = !$("inputFile").files.length;
+  }
+}
+
+async function insertDirectly() {
+  if (state.importing || !state.records.length) return;
+  state.importing = true;
+  $("addRows").disabled = true;
+  $("insertDirect").disabled = true;
+  $("clearSelection").disabled = true;
+  hideReview();
+  clearStatus();
+  try {
+    const initialPlan = await inspectOrInsert(null);
+    if (initialPlan.count === 0) {
+      setStatus("O arquivo não contém linhas para inserir.", false);
+      return;
+    }
+    state.plan = initialPlan;
+    const result = await inspectOrInsert("new");
+    if (result.needsReview) {
+      showReview(result);
+      setStatus("A planilha mudou durante a operação. Confira o resumo antes de inserir.", false);
+      return;
+    }
+    if (result.count === 0) {
+      setStatus("Todos os registros deste arquivo já estão na tabela. Nenhuma linha foi inserida.", false);
+      return;
+    }
+    const skippedText = result.skipped ? ` ${result.skipped} registro(s) repetido(s) foram ignorados automaticamente.` : "";
+    const formulaText = result.formulas.length
+      ? ` Fórmulas preservadas: ${result.preservedFormulas}; copiadas para novas linhas: ${result.copiedFormulas} (${result.formulas.join(", ")}).`
+      : " Não foram detectadas fórmulas na tabela.";
+    setStatus(`${result.count} linha(s) inserida(s) diretamente em ${result.sheetName}: ${result.reused} linha(s) em branco reutilizada(s) e ${result.appended} nova(s) criada(s).${skippedText}${formulaText}`, false, true);
+  } catch (error) {
+    setStatus(error.message || "Não foi possível adicionar as linhas.", true);
+  } finally {
+    state.importing = false;
+    $("addRows").disabled = !state.records.length;
+    $("insertDirect").disabled = !state.records.length;
     $("clearSelection").disabled = !$("inputFile").files.length;
   }
 }
@@ -461,6 +508,7 @@ async function insertRows(mode) {
   } finally {
     state.importing = false;
     $("addRows").disabled = !state.records.length;
+    $("insertDirect").disabled = !state.records.length;
     $("confirmNewOnly").disabled = false;
     $("confirmAll").disabled = false;
     $("clearSelection").disabled = !$("inputFile").files.length;
