@@ -233,10 +233,22 @@ async function inspectOrInsert(mode = null) {
   const sheetName = base === "100km" ? "BASE" : (base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO");
   const inputKeyName = base === "100km" ? "SM" : "MANIFESTO";
   return Excel.run(async (context) => {
-    const sheet = context.workbook.worksheets.getItem(sheetName);
+    const worksheets = context.workbook.worksheets;
+    worksheets.load("items/name");
+    await syncExcelStage(context, "listar as abas da pasta de trabalho");
+    const expectedSheetName = normalizeHeader(sheetName);
+    const matchingSheets = worksheets.items.filter((item) => normalizeHeader(item.name) === expectedSheetName);
+    if (!matchingSheets.length) {
+      const available = worksheets.items.map((item) => item.name).join(", ") || "nenhuma";
+      throw new Error(`Não encontrei a aba ${sheetName}. Abas disponíveis: ${available}.`);
+    }
+    if (matchingSheets.length > 1) {
+      throw new Error(`Há mais de uma aba com nome equivalente a ${sheetName}. Renomeie para deixar somente uma.`);
+    }
+    const sheet = worksheets.getItem(matchingSheets[0].name);
     const tables = sheet.tables;
     tables.load("items/name");
-    await syncExcelStage(context, `localizar a aba e a tabela ${sheetName}`);
+    await syncExcelStage(context, `localizar a tabela na aba ${matchingSheets[0].name}`);
     if (!tables.items.length) throw new Error(`Não encontrei uma tabela na aba ${sheetName}.`);
     if (tables.items.length > 1) throw new Error(`Há mais de uma tabela na aba ${sheetName}; não vou escolher uma automaticamente.`);
 
