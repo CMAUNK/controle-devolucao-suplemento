@@ -133,16 +133,15 @@ function applyColumnTextStyle(value, sample, header) {
   if (value === null || value === undefined) return value;
   let text = String(value);
   if (normalizeHeader(header) === "CPF") {
-    const digits = text.replace(/\D/g, "");
+    let digits = text.replace(/\D/g, "");
+    // A CPF beginning with zero can lose that zero if an upstream export
+    // treated the identifier as a number instead of text.
+    if (digits.length === 10) digits = digits.padStart(11, "0");
     if (digits.length === 11) text = digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   }
   if (!normalizeHeader(header).includes("MOTORISTA")) return text;
   const letters = text.replace(/[^\p{L}]/gu, "");
-  const sampleText = String(sample ?? "");
-  const sampleLetters = sampleText.replace(/[^\p{L}]/gu, "");
-  if (!letters || !sampleLetters) return text;
-  if (sampleLetters === sampleLetters.toLocaleUpperCase("pt-BR")) return text.toLocaleUpperCase("pt-BR");
-  if (sampleLetters === sampleLetters.toLocaleLowerCase("pt-BR")) return text.toLocaleLowerCase("pt-BR");
+  if (!letters) return text;
   // Match the common Portuguese name style while retaining lowercase connectors.
   const lowercaseWords = new Set(["a", "as", "ao", "aos", "da", "das", "de", "do", "dos", "e", "na", "nas", "no", "nos"]);
   return text.toLocaleLowerCase("pt-BR").replace(/[\p{L}]+/gu, (word, offset) => {
@@ -364,7 +363,10 @@ async function inspectOrInsert(mode = null) {
           const cellValue = applyColumnTextStyle(value, bodyValues[formatTemplateRow]?.[col], headers[col]);
           const alignmentSource = alignmentSources.get(`${assignment.row}:${col}`);
           if (alignmentSource) target.format.horizontalAlignment = alignmentSource.format.horizontalAlignment;
-          if (normalizeHeader(headers[col]) === "CPF") target.numberFormat = [["@"]];
+          if (normalizeHeader(headers[col]) === "CPF") {
+            target.numberFormat = [["@"]];
+            target.format.horizontalAlignment = "Left";
+          }
           target.values = [[cellValue]];
         }
       }
