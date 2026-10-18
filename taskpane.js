@@ -169,7 +169,7 @@ function clearSelection() {
 
 function ensureFileMatchesBase(base) {
   if (base === "100km") {
-    const required = ["SM", "DATA", "MATRICULA", "KM"];
+    const required = ["SM", "DATA", "KM"];
     const missing = required.filter((header) => !state.headers.some((candidate) => normalizeHeader(candidate) === normalizeHeader(header)));
     if (missing.length) throw new Error(`Este arquivo não parece ser da planilha 100km. Não encontrei: ${missing.join(", ")}.`);
     return;
@@ -206,10 +206,12 @@ async function inspectOrInsert(mode = null) {
     const inputKeyHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(inputKeyName));
     if (!inputKeyHeader) throw new Error(`O arquivo não tem a coluna ${inputKeyName}.`);
 
+    const ignored100kmHeaders = new Set(["MATRICULA", "JANTA", "TOTAL"]);
     const mappedInputColumns = new Map();
     for (const record of state.records) {
       if (!String(record[inputKeyHeader] || "").trim()) throw new Error(`Há uma linha sem ${inputKeyName}; revise o arquivo antes de inserir.`);
       for (const inputHeader of Object.keys(record)) {
+        if (base === "100km" && ignored100kmHeaders.has(normalizeHeader(inputHeader))) continue;
         const targetColumn = columnMap.get(normalizeHeader(inputHeader));
         if (targetColumn !== undefined) mappedInputColumns.set(normalizeHeader(inputHeader), targetColumn);
       }
@@ -247,9 +249,13 @@ async function inspectOrInsert(mode = null) {
         formulaTemplateRows.set(col, rowIndex);
       }
     }));
+    const protected100kmColumns = base === "100km"
+      ? [...ignored100kmHeaders].map((header) => columnMap.get(normalizeHeader(header))).filter((col) => col !== undefined)
+      : [];
+    const columnsToCheckForData = new Set([...mappedInputColumns.values(), ...protected100kmColumns]);
     const reusableRows = [];
     for (let row = 0; row < existingCount; row += 1) {
-      const hasIncomingData = [...mappedInputColumns.values()].some((col) => {
+      const hasIncomingData = [...columnsToCheckForData].some((col) => {
         if (formulaColumns.has(col)) return false;
         const value = bodyValues[row]?.[col];
         return value !== null && value !== undefined && String(value).trim() !== "";
@@ -280,6 +286,7 @@ async function inspectOrInsert(mode = null) {
       const record = state.records[index];
       const values = new Map();
       for (const [inputHeader, rawValue] of Object.entries(record)) {
+        if (base === "100km" && ignored100kmHeaders.has(normalizeHeader(inputHeader))) continue;
         const targetColumn = columnMap.get(normalizeHeader(inputHeader));
         if (targetColumn === undefined || rawValue === "" || rawValue == null) continue;
         let value = rawValue;
