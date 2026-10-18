@@ -90,7 +90,7 @@ function renderPreview() {
   const ids = state.records.map((row) => row[identifier]).filter(Boolean);
   const total = state.records.reduce((sum, row) => sum + (Number(String(row[quantity] || "").replace(/[^0-9.]/g, "")) || 0), 0);
   const destination = is100km ? "BASE" : `BASE-${base.toUpperCase()}`;
-  $("preview").textContent = `${state.fileName}\nDestino: ${destination}\nLinhas no arquivo: ${state.records.length}\n${is100km ? "SMs" : "Manifestos"}: ${ids.join(", ") || "não identificados"}\n${is100km ? "KM somados" : "Volumes somados"}: ${total}`;
+  $("preview").textContent = `${state.fileName}\nDestino: ${destination}\nLinhas no arquivo: ${state.records.length}\n${is100km ? "SMs" : "Manifestos"}: ${ids.join(", ") || "não identificados"}\n${is100km ? "KM somados" : "Volumes somados"}: ${total}${is100km ? " Km" : ""}`;
   renderSampleRows();
 }
 
@@ -365,12 +365,19 @@ async function inspectOrInsert(mode = null) {
       for (const [col, value] of assignment.values) {
         if (!formulaColumns.has(col)) {
           const target = table.getDataBodyRange().getCell(assignment.row, col);
-          const cellValue = applyColumnTextStyle(value, bodyValues[formatTemplateRow]?.[col], headers[col]);
+          let cellValue = applyColumnTextStyle(value, bodyValues[formatTemplateRow]?.[col], headers[col]);
           const alignmentSource = alignmentSources.get(`${assignment.row}:${col}`);
           if (alignmentSource) target.format.horizontalAlignment = alignmentSource.format.horizontalAlignment;
           if (normalizeHeader(headers[col]) === "CPF") {
             target.numberFormat = [["@"]];
             target.format.horizontalAlignment = "Left";
+          }
+          if (base === "100km" && normalizeHeader(headers[col]) === "KM") {
+            const numericKm = Number(String(value).replace(/\s*km\s*$/i, "").trim().replace(",", "."));
+            if (Number.isFinite(numericKm)) {
+              cellValue = numericKm;
+              target.numberFormat = [['0" Km"']];
+            }
           }
           target.values = [[cellValue]];
         }
