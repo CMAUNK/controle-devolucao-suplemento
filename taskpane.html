@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Inserir dados na planilha</title>
-  <link rel="stylesheet" href="taskpane.css?v=1.4.8">
+  <link rel="stylesheet" href="taskpane.css?v=1.4.9">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script defer src="taskpane.js?v=1.4.8"></script>
+  <script defer src="taskpane.js?v=1.4.9"></script>
 </head>
 <body>
   <main>
@@ -36,7 +36,7 @@
       <div id="duplicateWarning" class="warning hidden" role="alert">
         <strong>Registro(s) já encontrado(s)</strong>
         <p id="duplicateText"></p>
-        <p>Escolha se quer ignorar os repetidos ou inserir todas as linhas.</p>
+        <p>Escolha se quer ignorar os registros repetidos ou inserir todas as linhas.</p>
       </div>
       <div class="actions">
         <button id="confirmNewOnly">Inserir somente novos</button>
@@ -45,7 +45,7 @@
       </div>
     </section>
     <div id="status" role="status" aria-live="polite"></div>
-    <p class="note">Confira as linhas e o destino antes de inserir. O suplemento avisa sobre registros repetidos, reutiliza linhas em branco e preserva as fórmulas da tabela. Na BASE 100km, Matrícula e Total não são importados; Janta pode ser preenchida e a fórmula de Total é mantida.</p>
+    <p class="note">Confira as linhas e o destino antes de inserir. O suplemento avisa sobre registros repetidos, reutiliza linhas em branco e preserva as fórmulas da tabela. Na BASE 100km, Matrícula e Total não são importados; Janta pode ser preenchida e a fórmula de Total é mantida. Motorista e ajudante podem compartilhar a SM, pois a repetição é verificada por SM e CPF.</p>
   </main>
 </body>
 </html>

@@ -87,8 +87,11 @@ function renderPreview() {
   const is100km = base === "100km";
   const identifier = is100km ? "SM" : "MANIFESTO";
   const quantity = is100km ? "KM" : "VOLUMES";
-  const ids = state.records.map((row) => row[identifier]).filter(Boolean);
-  const total = state.records.reduce((sum, row) => sum + (Number(String(row[quantity] || "").replace(/[^0-9.]/g, "")) || 0), 0);
+  const ids = [...new Set(state.records.map((row) => row[identifier]).filter(Boolean))];
+  const countedRows = is100km
+    ? state.records.filter((row, index, rows) => rows.findIndex((candidate) => candidate[identifier] === row[identifier]) === index)
+    : state.records;
+  const total = countedRows.reduce((sum, row) => sum + (Number(String(row[quantity] || "").replace(/[^0-9.]/g, "")) || 0), 0);
   const destination = is100km ? "BASE" : `BASE-${base.toUpperCase()}`;
   $("preview").textContent = `${state.fileName}\nDestino: ${destination}\nLinhas no arquivo: ${state.records.length}\n${is100km ? "SMs" : "Manifestos"}: ${ids.join(", ") || "não identificados"}\n${is100km ? "KM somados" : "Volumes somados"}: ${total}${is100km ? " Km" : ""}`;
   renderSampleRows();
@@ -131,6 +134,13 @@ function renderSampleRows() {
 
 function normalizeHeader(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+}
+
+function personRecordKey(number, cpf, name = "") {
+  let cpfDigits = String(cpf || "").replace(/\D/g, "");
+  if (cpfDigits.length === 10) cpfDigits = cpfDigits.padStart(11, "0");
+  const person = cpfDigits || String(name || "").trim().toLocaleLowerCase("pt-BR");
+  return `${String(number || "").trim()}|${person}`;
 }
 
 function applyColumnTextStyle(value, sample, header) {
@@ -195,7 +205,7 @@ function clearSelection() {
 
 function ensureFileMatchesBase(base) {
   if (base === "100km") {
-    const required = ["SM", "DATA", "KM"];
+    const required = ["SM", "DATA", "CPF", "KM"];
     const missing = required.filter((header) => !state.headers.some((candidate) => normalizeHeader(candidate) === normalizeHeader(header)));
     if (missing.length) throw new Error(`Este arquivo não parece ser da planilha 100km. Não encontrei: ${missing.join(", ")}.`);
     return;
@@ -231,11 +241,14 @@ async function inspectOrInsert(mode = null) {
     if (uniqueColumn === undefined) throw new Error(`Não encontrei a coluna ${inputKeyName} na tabela da aba ${sheetName}.`);
     const inputKeyHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(inputKeyName));
     if (!inputKeyHeader) throw new Error(`O arquivo não tem a coluna ${inputKeyName}.`);
+    const inputCpfHeader = base === "100km" ? state.headers.find((header) => normalizeHeader(header) === normalizeHeader("CPF")) : null;
+    const inputNameHeader = base === "100km" ? state.headers.find((header) => normalizeHeader(header) === normalizeHeader("Motorista")) : null;
 
     const ignored100kmHeaders = new Set(["MATRICULA", "TOTAL"]);
     const mappedInputColumns = new Map();
     for (const record of state.records) {
       if (!String(record[inputKeyHeader] || "").trim()) throw new Error(`Há uma linha sem ${inputKeyName}; revise o arquivo antes de inserir.`);
+      if (base === "100km" && !String(record[inputCpfHeader] || "").replace(/\D/g, "")) throw new Error("Há uma linha sem CPF; confira o motorista e o ajudante antes de inserir.");
       for (const inputHeader of Object.keys(record)) {
         if (base === "100km" && ignored100kmHeaders.has(normalizeHeader(inputHeader))) continue;
         const targetColumn = columnMap.get(normalizeHeader(inputHeader));
@@ -243,20 +256,38 @@ async function inspectOrInsert(mode = null) {
       }
     }
     const existing = new Set();
+    const personColumn = base === "100km" ? columnMap.get(normalizeHeader("CPF")) : undefined;
+    if (base === "100km" && personColumn === undefined) throw new Error("Para importar uma linha por pessoa, a tabela BASE precisa ter a coluna CPF.");
     if (existingCount > 0) {
       const manifestValues = table.columns.getItemAt(uniqueColumn).getDataBodyRange();
       manifestValues.load("values");
+      let personValues = null;
+      if (base === "100km") {
+        personValues = table.columns.getItemAt(personColumn).getDataBodyRange();
+        personValues.load("values");
+      }
       await context.sync();
-      manifestValues.values.flat().map((value) => String(value || "").trim()).filter(Boolean).forEach((value) => existing.add(value));
+      manifestValues.values.flat().forEach((value, index) => {
+        const number = String(value || "").trim();
+        if (!number) return;
+        if (base === "100km") {
+          existing.add(personRecordKey(number, personValues.values[index]?.[0]));
+        } else {
+          existing.add(number);
+        }
+      });
     }
     const seenInFile = new Set();
     const duplicateList = [];
     const newRecordIndexes = [];
     state.records.forEach((record, index) => {
       const number = String(record[inputKeyHeader] || "").trim();
-      if (existing.has(number) || seenInFile.has(number)) duplicateList.push(number);
+      const identity = base === "100km"
+        ? personRecordKey(number, record[inputCpfHeader], record[inputNameHeader])
+        : number;
+      if (existing.has(identity) || seenInFile.has(identity)) duplicateList.push(number);
       else newRecordIndexes.push(index);
-      seenInFile.add(number);
+      seenInFile.add(identity);
     });
 
     const bodyRange = existingCount ? table.getDataBodyRange() : null;
