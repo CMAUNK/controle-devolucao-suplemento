@@ -189,6 +189,17 @@ function hideReview() {
   $("reviewSummary").replaceChildren();
 }
 
+async function syncExcelStage(context, stage) {
+  try {
+    await context.sync();
+  } catch (error) {
+    const message = error?.message || String(error);
+    const code = error?.code ? ` · código ${error.code}` : "";
+    const location = error?.debugInfo?.errorLocation ? ` · operação ${error.debugInfo.errorLocation}` : "";
+    throw new Error(`${message} · etapa: ${stage}${code}${location}`);
+  }
+}
+
 function clearSelection() {
   if (state.importing) return;
   $("inputFile").value = "";
@@ -225,7 +236,7 @@ async function inspectOrInsert(mode = null) {
     const sheet = context.workbook.worksheets.getItem(sheetName);
     const tables = sheet.tables;
     tables.load("items/name");
-    await context.sync();
+    await syncExcelStage(context, `localizar a aba e a tabela ${sheetName}`);
     if (!tables.items.length) throw new Error(`Não encontrei uma tabela na aba ${sheetName}.`);
     if (tables.items.length > 1) throw new Error(`Há mais de uma tabela na aba ${sheetName}; não vou escolher uma automaticamente.`);
 
@@ -233,7 +244,7 @@ async function inspectOrInsert(mode = null) {
     const headerRange = table.getHeaderRowRange();
     headerRange.load("values");
     const countResult = table.rows.getCount();
-    await context.sync();
+    await syncExcelStage(context, "ler os cabeçalhos e a quantidade de linhas da tabela");
     const existingCount = countResult.value;
     const headers = headerRange.values[0].map((value) => String(value || "").trim());
     const columnMap = new Map(headers.map((header, index) => [normalizeHeader(header), index]));
@@ -266,7 +277,7 @@ async function inspectOrInsert(mode = null) {
         personValues = table.columns.getItemAt(personColumn).getDataBodyRange();
         personValues.load("values");
       }
-      await context.sync();
+      await syncExcelStage(context, "comparar os registros já existentes");
       manifestValues.values.flat().forEach((value, index) => {
         const number = String(value || "").trim();
         if (!number) return;
@@ -294,7 +305,7 @@ async function inspectOrInsert(mode = null) {
     let bodyValues = [], bodyFormulas = [];
     if (bodyRange) {
       bodyRange.load("values,formulas");
-      await context.sync();
+      await syncExcelStage(context, "ler os dados e as fórmulas atuais");
       bodyValues = bodyRange.values;
       bodyFormulas = bodyRange.formulas;
     }
@@ -358,7 +369,7 @@ async function inspectOrInsert(mode = null) {
       const blankRows = Array.from({ length: plan.appended }, () => new Array(headers.length).fill(""));
       const added = table.rows.add(-1, blankRows, true);
       added.load("index");
-      await context.sync();
+      await syncExcelStage(context, "adicionar linhas à tabela");
       for (let i = 0; i < plan.appended; i += 1) assignments.push({ row: added.index + i, values: inputValues[reusedCount + i], existing: false });
     }
     const formattedBody = table.getDataBodyRange();
@@ -385,7 +396,7 @@ async function inspectOrInsert(mode = null) {
         alignmentSources.set(`${assignment.row}:${col}`, source);
       }
     }
-    if (alignmentSources.size) await context.sync();
+    if (alignmentSources.size) await syncExcelStage(context, "ler o formato das linhas-modelo");
     let preservedFormulas = 0, copiedFormulas = 0;
     for (const assignment of assignments) {
       const formatTemplateRow = formatTemplateRows.get(assignment);
@@ -424,7 +435,7 @@ async function inspectOrInsert(mode = null) {
         }
       }
     }
-    await context.sync();
+    await syncExcelStage(context, "preencher as linhas e copiar as fórmulas");
     return { ...plan, preservedFormulas, copiedFormulas };
   });
 }

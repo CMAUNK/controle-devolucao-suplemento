@@ -3,7 +3,7 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:type="TaskPaneApp">
   <Id>89d97b2c-7e73-4a4c-a35f-34cc0fd2b19d</Id>
-  <Version>1.4.9.0</Version>
+  <Version>1.4.10.0</Version>
   <ProviderName>Controle Devolução</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
   <DisplayName DefaultValue="Inserir dados Jadlog" />
@@ -13,7 +13,7 @@
   <SupportUrl DefaultValue="https://github.com/CMAUNK/controle-devolucao" />
   <Hosts><Host Name="Workbook" /></Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/taskpane.html?v=1.4.9" />
+    <SourceLocation DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/taskpane.html?v=1.4.10" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 </OfficeApp>
