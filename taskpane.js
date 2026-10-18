@@ -129,6 +129,28 @@ function normalizeHeader(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
 }
 
+function applyColumnTextStyle(value, sample, header) {
+  if (value === null || value === undefined) return value;
+  let text = String(value);
+  if (normalizeHeader(header) === "CPF") {
+    const digits = text.replace(/\D/g, "");
+    if (digits.length === 11) text = digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  }
+  if (!normalizeHeader(header).includes("MOTORISTA")) return text;
+  const letters = text.replace(/[^\p{L}]/gu, "");
+  const sampleText = String(sample ?? "");
+  const sampleLetters = sampleText.replace(/[^\p{L}]/gu, "");
+  if (!letters || !sampleLetters) return text;
+  if (sampleLetters === sampleLetters.toLocaleUpperCase("pt-BR")) return text.toLocaleUpperCase("pt-BR");
+  if (sampleLetters === sampleLetters.toLocaleLowerCase("pt-BR")) return text.toLocaleLowerCase("pt-BR");
+  // Match the common Portuguese name style while retaining lowercase connectors.
+  const lowercaseWords = new Set(["a", "as", "ao", "aos", "da", "das", "de", "do", "dos", "e", "na", "nas", "no", "nos"]);
+  return text.toLocaleLowerCase("pt-BR").replace(/[\p{L}]+/gu, (word, offset) => {
+    if (offset > 0 && lowercaseWords.has(word)) return word;
+    return word.charAt(0).toLocaleUpperCase("pt-BR") + word.slice(1);
+  });
+}
+
 function columnLetter(zeroBased) {
   let n = zeroBased + 1, result = "";
   while (n > 0) {
@@ -316,15 +338,35 @@ async function inspectOrInsert(mode = null) {
       }
       return bodyValues.length ? 0 : undefined;
     };
+    const formatTemplateRows = new Map();
+    const alignmentSources = new Map();
+    for (const assignment of assignments) {
+      const templateRow = findFormatTemplateRow(assignment.row);
+      formatTemplateRows.set(assignment, templateRow);
+      if (templateRow === undefined || templateRow === assignment.row) continue;
+      for (const col of assignment.values.keys()) {
+        const source = formattedBody.getCell(templateRow, col);
+        source.format.load("horizontalAlignment");
+        alignmentSources.set(`${assignment.row}:${col}`, source);
+      }
+    }
+    if (alignmentSources.size) await context.sync();
     let preservedFormulas = 0, copiedFormulas = 0;
     for (const assignment of assignments) {
-      const formatTemplateRow = findFormatTemplateRow(assignment.row);
+      const formatTemplateRow = formatTemplateRows.get(assignment);
       if (formatTemplateRow !== undefined && formatTemplateRow !== assignment.row) {
         formattedBody.getCell(assignment.row, 0).getResizedRange(0, headers.length - 1)
           .copyFrom(formattedBody.getCell(formatTemplateRow, 0).getResizedRange(0, headers.length - 1), Excel.RangeCopyType.formats);
       }
       for (const [col, value] of assignment.values) {
-        if (!formulaColumns.has(col)) table.getDataBodyRange().getCell(assignment.row, col).values = [[value]];
+        if (!formulaColumns.has(col)) {
+          const target = table.getDataBodyRange().getCell(assignment.row, col);
+          const cellValue = applyColumnTextStyle(value, bodyValues[formatTemplateRow]?.[col], headers[col]);
+          const alignmentSource = alignmentSources.get(`${assignment.row}:${col}`);
+          if (alignmentSource) target.format.horizontalAlignment = alignmentSource.format.horizontalAlignment;
+          if (normalizeHeader(headers[col]) === "CPF") target.numberFormat = [["@"]];
+          target.values = [[cellValue]];
+        }
       }
       for (const col of formulaColumns) {
         const target = table.getDataBodyRange().getCell(assignment.row, col);
