@@ -206,7 +206,7 @@ async function inspectOrInsert(mode = null) {
     const inputKeyHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(inputKeyName));
     if (!inputKeyHeader) throw new Error(`O arquivo não tem a coluna ${inputKeyName}.`);
 
-    const ignored100kmHeaders = new Set(["MATRICULA", "JANTA", "TOTAL"]);
+    const ignored100kmHeaders = new Set(["MATRICULA", "TOTAL"]);
     const mappedInputColumns = new Map();
     for (const record of state.records) {
       if (!String(record[inputKeyHeader] || "").trim()) throw new Error(`Há uma linha sem ${inputKeyName}; revise o arquivo antes de inserir.`);

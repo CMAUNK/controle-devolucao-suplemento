@@ -15,4 +15,4 @@ O destino 100km é a aba `BASE`, identificada pelo cabeçalho `SM`; os duplicado
 
 O suplemento reutiliza linhas vazias já existentes na tabela antes de criar linhas novas. Ele detecta colunas com fórmulas e as preserva nas linhas reutilizadas; ao criar novas linhas, copia as fórmulas existentes da tabela para manter os cálculos com referências ajustadas pelo Excel. Confira o destino e as duplicatas antes de confirmar a importação.
 
-No destino `BASE 100km`, o TSV não inclui `Matrícula`, `Janta` nem `Total`. O suplemento não altera essas colunas; se houver fórmulas nelas, elas são preservadas ou copiadas conforme a tabela do Excel.
+No destino `BASE 100km`, o TSV inclui `Janta`, mas não inclui `Matrícula` nem `Total`. O suplemento pode preencher Janta quando ela tiver um valor; Matrícula não é importada e Total é preservado ou copiado como fórmula da tabela.
