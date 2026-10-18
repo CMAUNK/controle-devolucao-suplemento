@@ -3,17 +3,17 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:type="TaskPaneApp">
   <Id>89d97b2c-7e73-4a4c-a35f-34cc0fd2b19d</Id>
-  <Version>1.3.0.0</Version>
+  <Version>1.4.0.0</Version>
   <ProviderName>Controle Devolução</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
-  <DisplayName DefaultValue="Inserir Manifestos Jadlog" />
-  <Description DefaultValue="Adiciona dados TSV de manifestos às tabelas BASE-RECEBENDO e BASE-EXPEDINDO." />
+  <DisplayName DefaultValue="Inserir dados Jadlog" />
+  <Description DefaultValue="Adiciona dados TSV às bases de devolução ou à planilha operacional de 100km." />
   <IconUrl DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/icon-80.png" />
   <SupportUrl DefaultValue="https://github.com/CMAUNK/controle-devolucao" />
   <Hosts><Host Name="Workbook" /></Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/taskpane.html?v=1.3.0" />
+    <SourceLocation DefaultValue="https://cmaunk.github.io/controle-devolucao-suplemento/taskpane.html?v=1.4.0" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
 </OfficeApp>

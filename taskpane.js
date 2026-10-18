@@ -80,11 +80,13 @@ function renderPreview() {
     return;
   }
   const base = $("base").value;
-  const manifestoKey = "MANIFESTO";
-  const volumesKey = "VOLUMES";
-  const manifestos = state.records.map((row) => row[manifestoKey]).filter(Boolean);
-  const totalVolumes = state.records.reduce((sum, row) => sum + (Number(row[volumesKey]) || 0), 0);
-  $("preview").textContent = `${state.fileName}\nDestino: BASE-${base.toUpperCase()}\nLinhas no arquivo: ${state.records.length}\nManifestos: ${manifestos.join(", ") || "não identificados"}\nVolumes somados: ${totalVolumes}`;
+  const is100km = base === "100km";
+  const identifier = is100km ? "SM" : "MANIFESTO";
+  const quantity = is100km ? "KM" : "VOLUMES";
+  const ids = state.records.map((row) => row[identifier]).filter(Boolean);
+  const total = state.records.reduce((sum, row) => sum + (Number(String(row[quantity] || "").replace(/[^0-9.]/g, "")) || 0), 0);
+  const destination = is100km ? "BASE" : `BASE-${base.toUpperCase()}`;
+  $("preview").textContent = `${state.fileName}\nDestino: ${destination}\nLinhas no arquivo: ${state.records.length}\n${is100km ? "SMs" : "Manifestos"}: ${ids.join(", ") || "não identificados"}\n${is100km ? "KM somados" : "Volumes somados"}: ${total}`;
   renderSampleRows();
 }
 
@@ -138,7 +140,7 @@ function columnLetter(zeroBased) {
 }
 
 function excelDateSerial(value) {
-  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
   if (!match) return value;
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   return (date.getTime() - Date.UTC(1899, 11, 30)) / 86400000;
@@ -166,6 +168,12 @@ function clearSelection() {
 }
 
 function ensureFileMatchesBase(base) {
+  if (base === "100km") {
+    const required = ["SM", "DATA", "MATRICULA", "KM"];
+    const missing = required.filter((header) => !state.headers.some((candidate) => normalizeHeader(candidate) === normalizeHeader(header)));
+    if (missing.length) throw new Error(`Este arquivo não parece ser da planilha 100km. Não encontrei: ${missing.join(", ")}.`);
+    return;
+  }
   const expected = base === "recebendo" ? "DATA DE TRASFERENCIA" : "DT DE TRASFERENCIA";
   if (!state.headers.some((header) => normalizeHeader(header) === normalizeHeader(expected))) {
     throw new Error(`O arquivo não corresponde à base ${base === "recebendo" ? "RECEBENDO" : "EXPEDINDO"}. Selecione o TSV dessa base.`);
@@ -175,7 +183,8 @@ function ensureFileMatchesBase(base) {
 async function inspectOrInsert(mode = null) {
   const base = $("base").value;
   ensureFileMatchesBase(base);
-  const sheetName = base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO";
+  const sheetName = base === "100km" ? "BASE" : (base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO");
+  const inputKeyName = base === "100km" ? "SM" : "MANIFESTO";
   return Excel.run(async (context) => {
     const sheet = context.workbook.worksheets.getItem(sheetName);
     const tables = sheet.tables;
@@ -192,14 +201,14 @@ async function inspectOrInsert(mode = null) {
     const existingCount = countResult.value;
     const headers = headerRange.values[0].map((value) => String(value || "").trim());
     const columnMap = new Map(headers.map((header, index) => [normalizeHeader(header), index]));
-    const manifestColumn = columnMap.get("MANIFESTO");
-    if (manifestColumn === undefined) throw new Error(`Não encontrei a coluna MANIFESTO na tabela da aba ${sheetName}.`);
-    const inputManifestHeader = state.headers.find((header) => normalizeHeader(header) === "MANIFESTO");
-    if (!inputManifestHeader) throw new Error("O arquivo não tem a coluna MANIFESTO.");
+    const uniqueColumn = columnMap.get(normalizeHeader(inputKeyName));
+    if (uniqueColumn === undefined) throw new Error(`Não encontrei a coluna ${inputKeyName} na tabela da aba ${sheetName}.`);
+    const inputKeyHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(inputKeyName));
+    if (!inputKeyHeader) throw new Error(`O arquivo não tem a coluna ${inputKeyName}.`);
 
     const mappedInputColumns = new Map();
     for (const record of state.records) {
-      if (!String(record[inputManifestHeader] || "").trim()) throw new Error("Há uma linha sem número de manifesto; revise o arquivo antes de inserir.");
+      if (!String(record[inputKeyHeader] || "").trim()) throw new Error(`Há uma linha sem ${inputKeyName}; revise o arquivo antes de inserir.`);
       for (const inputHeader of Object.keys(record)) {
         const targetColumn = columnMap.get(normalizeHeader(inputHeader));
         if (targetColumn !== undefined) mappedInputColumns.set(normalizeHeader(inputHeader), targetColumn);
@@ -207,7 +216,7 @@ async function inspectOrInsert(mode = null) {
     }
     const existing = new Set();
     if (existingCount > 0) {
-      const manifestValues = table.columns.getItemAt(manifestColumn).getDataBodyRange();
+      const manifestValues = table.columns.getItemAt(uniqueColumn).getDataBodyRange();
       manifestValues.load("values");
       await context.sync();
       manifestValues.values.flat().map((value) => String(value || "").trim()).filter(Boolean).forEach((value) => existing.add(value));
@@ -216,7 +225,7 @@ async function inspectOrInsert(mode = null) {
     const duplicateList = [];
     const newRecordIndexes = [];
     state.records.forEach((record, index) => {
-      const number = String(record[inputManifestHeader] || "").trim();
+      const number = String(record[inputKeyHeader] || "").trim();
       if (existing.has(number) || seenInFile.has(number)) duplicateList.push(number);
       else newRecordIndexes.push(index);
       seenInFile.add(number);
@@ -245,7 +254,7 @@ async function inspectOrInsert(mode = null) {
         const value = bodyValues[row]?.[col];
         return value !== null && value !== undefined && String(value).trim() !== "";
       });
-      if (!hasIncomingData && String(bodyValues[row]?.[manifestColumn] ?? "").trim() === "") reusableRows.push(row);
+      if (!hasIncomingData && String(bodyValues[row]?.[uniqueColumn] ?? "").trim() === "") reusableRows.push(row);
     }
 
     const candidateIndexes = mode === "new" ? newRecordIndexes : state.records.map((_, index) => index);
@@ -274,7 +283,7 @@ async function inspectOrInsert(mode = null) {
         const targetColumn = columnMap.get(normalizeHeader(inputHeader));
         if (targetColumn === undefined || rawValue === "" || rawValue == null) continue;
         let value = rawValue;
-        if (["DATA DE TRASFERENCIA", "DT DE TRASFERENCIA"].includes(normalizeHeader(inputHeader))) value = excelDateSerial(rawValue);
+        if (["DATA DE TRASFERENCIA", "DT DE TRASFERENCIA", "DATA"].includes(normalizeHeader(inputHeader))) value = excelDateSerial(rawValue);
         values.set(targetColumn, value);
       }
       return values;
@@ -370,11 +379,11 @@ async function insertRows(mode) {
     }
     if (result.count === 0) {
       hideReview();
-      setStatus("Todos os manifestos deste arquivo já estão na tabela. Nenhuma linha foi inserida.", false);
+      setStatus("Todos os identificadores deste arquivo já estão na tabela. Nenhuma linha foi inserida.", false);
       return;
     }
     hideReview();
-    const skippedText = result.skipped ? ` ${result.skipped} duplicado(s) foram ignorados.` : "";
+    const skippedText = result.skipped ? ` ${result.skipped} registro(s) repetido(s) foram ignorados.` : "";
     const formulaText = result.formulas.length
       ? ` Fórmulas preservadas: ${result.preservedFormulas}; copiadas para novas linhas: ${result.copiedFormulas} (${result.formulas.join(", ")}).`
       : " Não foram detectadas fórmulas na tabela.";

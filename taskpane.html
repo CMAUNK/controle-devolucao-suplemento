@@ -3,24 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Manifestos Jadlog</title>
-  <link rel="stylesheet" href="taskpane.css?v=1.3.0">
+  <title>Inserir dados na planilha</title>
+  <link rel="stylesheet" href="taskpane.css?v=1.4.0">
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script defer src="taskpane.js?v=1.3.0"></script>
+  <script defer src="taskpane.js?v=1.4.0"></script>
 </head>
 <body>
   <main>
-    <h1>Inserir dados do manifesto</h1>
-    <p>Escolha o arquivo TSV baixado no aplicativo de manifestos. Os dados serão adicionados à tabela da planilha aberta.</p>
+    <h1>Inserir dados na planilha</h1>
+    <p>Escolha o arquivo TSV baixado no aplicativo. Os dados serão adicionados à tabela da pasta de trabalho aberta.</p>
+
     <label for="base">Base de destino</label>
     <select id="base">
       <option value="recebendo">BASE-RECEBENDO</option>
       <option value="expedindo">BASE-EXPEDINDO</option>
+      <option value="100km">BASE 100km</option>
     </select>
+
     <label for="inputFile">Arquivo de dados (.tsv)</label>
     <input id="inputFile" type="file" accept=".tsv,.txt,text/tab-separated-values">
     <div id="preview" class="panel muted">Selecione um arquivo para ver uma prévia.</div>
     <div id="previewRows" class="table-wrap hidden"></div>
+
     <div class="actions">
       <button id="addRows" disabled>Conferir antes de inserir</button>
       <button id="clearSelection" class="secondary" disabled>Limpar arquivo</button>
@@ -29,7 +33,7 @@
       <strong>Confira antes de inserir</strong>
       <div id="reviewSummary"></div>
       <div id="duplicateWarning" class="warning hidden" role="alert">
-        <strong>Manifesto(s) já encontrado(s)</strong>
+        <strong>Registro(s) já encontrado(s)</strong>
         <p id="duplicateText"></p>
         <p>Escolha se quer ignorar os repetidos ou inserir todas as linhas.</p>
       </div>
@@ -40,7 +44,7 @@
       </div>
     </section>
     <div id="status" role="status" aria-live="polite"></div>
-    <p class="note">Confira as linhas e o destino antes de inserir. O suplemento avisa sobre manifestos repetidos, mostra quantas linhas em branco serão reutilizadas e tenta preservar as fórmulas da tabela.</p>
+    <p class="note">Confira as linhas e o destino antes de inserir. O suplemento avisa sobre registros repetidos, reutiliza linhas em branco e preserva as fórmulas da tabela.</p>
   </main>
 </body>
 </html>
