@@ -304,8 +304,25 @@ async function inspectOrInsert(mode = null) {
       await context.sync();
       for (let i = 0; i < plan.appended; i += 1) assignments.push({ row: added.index + i, values: inputValues[reusedCount + i], existing: false });
     }
+    const formattedBody = table.getDataBodyRange();
+    const findFormatTemplateRow = (targetRow) => {
+      // Use the closest populated row so the inserted cells inherit the
+      // workbook's font, size, number format, alignment, borders, and fills.
+      for (let row = Math.min(targetRow - 1, bodyValues.length - 1); row >= 0; row -= 1) {
+        if (bodyValues[row]?.some((value) => value !== null && value !== undefined && String(value).trim() !== "")) return row;
+      }
+      for (let row = Math.max(0, targetRow + 1); row < bodyValues.length; row += 1) {
+        if (bodyValues[row]?.some((value) => value !== null && value !== undefined && String(value).trim() !== "")) return row;
+      }
+      return bodyValues.length ? 0 : undefined;
+    };
     let preservedFormulas = 0, copiedFormulas = 0;
     for (const assignment of assignments) {
+      const formatTemplateRow = findFormatTemplateRow(assignment.row);
+      if (formatTemplateRow !== undefined && formatTemplateRow !== assignment.row) {
+        formattedBody.getCell(assignment.row, 0).getResizedRange(0, headers.length - 1)
+          .copyFrom(formattedBody.getCell(formatTemplateRow, 0).getResizedRange(0, headers.length - 1), Excel.RangeCopyType.formats);
+      }
       for (const [col, value] of assignment.values) {
         if (!formulaColumns.has(col)) table.getDataBodyRange().getCell(assignment.row, col).values = [[value]];
       }

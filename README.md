@@ -13,6 +13,6 @@ Este suplemento importa no Excel as linhas TSV exportadas pelo aplicativo Contro
 
 O destino 100km é a aba `BASE`, identificada pelo cabeçalho `SM`; os duplicados são comparados por esse número. O suplemento associa dados pelos cabeçalhos e escreve na pasta de trabalho ativa pelo Office JavaScript API. Ele não envia o conteúdo do TSV ou da planilha para um servidor. O código hospedado aqui é público; não inclua arquivos de dados, PDFs, credenciais ou tokens neste repositório.
 
-O suplemento reutiliza linhas vazias já existentes na tabela antes de criar linhas novas. Ele detecta colunas com fórmulas e as preserva nas linhas reutilizadas; ao criar novas linhas, copia as fórmulas existentes da tabela para manter os cálculos com referências ajustadas pelo Excel. Confira o destino e as duplicatas antes de confirmar a importação.
+O suplemento reutiliza linhas vazias já existentes na tabela antes de criar linhas novas. As linhas preenchidas herdam o formato visual da linha preenchida mais próxima (fonte, tamanho, alinhamento, bordas, cores e formatos numéricos). Ele detecta colunas com fórmulas e as preserva nas linhas reutilizadas; ao criar novas linhas, copia as fórmulas existentes da tabela para manter os cálculos com referências ajustadas pelo Excel. Confira o destino e as duplicatas antes de confirmar a importação.
 
 No destino `BASE 100km`, o TSV inclui `Janta`, mas não inclui `Matrícula` nem `Total`. O suplemento pode preencher Janta quando ela tiver um valor; Matrícula não é importada e Total é preservado ou copiado como fórmula da tabela.
