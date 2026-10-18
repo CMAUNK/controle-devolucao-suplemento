@@ -11,7 +11,7 @@ Este suplemento importa no Excel as linhas TSV exportadas pelo aplicativo Contro
 5. Confira o resumo final: linhas inseridas, linhas vazias reutilizadas, novas linhas criadas e fórmulas detectadas.
 6. Use **Limpar arquivo** para remover a seleção e a prévia do painel; isso não apaga linhas da planilha.
 
-O botão **Inserir direto** pula a tela de conferência. Ele insere somente registros novos e ignora os repetidos automaticamente; o resumo final informa quantas linhas foram ignoradas.
+O botão **Confirmar e inserir** pula a tela de conferência. Ele insere somente registros novos e ignora os repetidos automaticamente; o resumo final informa quantas linhas foram ignoradas.
 
 O destino 100km é a aba `BASE`, identificada pelo cabeçalho `SM`; os duplicados são comparados por esse número. O suplemento associa dados pelos cabeçalhos e escreve na pasta de trabalho ativa pelo Office JavaScript API. Ele não envia o conteúdo do TSV ou da planilha para um servidor. O código hospedado aqui é público; não inclua arquivos de dados, PDFs, credenciais ou tokens neste repositório.
 
