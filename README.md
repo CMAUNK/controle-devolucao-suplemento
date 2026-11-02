@@ -17,6 +17,8 @@ O destino 100km é a aba `BASE`, identificada pelo cabeçalho `SM`. Motorista e 
 
 O suplemento reutiliza linhas vazias já existentes na tabela antes de criar linhas novas. As linhas preenchidas herdam o formato visual e o alinhamento da linha preenchida mais próxima (fonte, tamanho, alinhamento, bordas, cores e formatos numéricos). Na planilha 100km, o nome do motorista é apresentado em formato de nome e o CPF é mantido como texto, com 11 dígitos, pontuação e alinhamento à esquerda. Ele detecta colunas com fórmulas e as preserva nas linhas reutilizadas; ao criar novas linhas, copia as fórmulas existentes da tabela para manter os cálculos com referências ajustadas pelo Excel. Confira o destino e as duplicatas antes de confirmar a importação.
 
+Para os CT-es da base EXPEDINDO, `CTE'S` é o cabeçalho atual. O suplemento também reconhece os cabeçalhos antigos `CTE'S NÃO RECEBIDO` e `CTE'S NÃO RECEBIDOS` como equivalentes, permitindo importar arquivos novos em planilhas que ainda estejam com o cabeçalho anterior.
+
 No destino `BASE 100km`, o TSV inclui `Janta`, mas não inclui `Matrícula` nem `Total`. O suplemento pode preencher Janta quando ela tiver um valor; Matrícula não é importada e Total é preservado ou copiado como fórmula da tabela.
 
 Ao inserir na `BASE 100km`, o suplemento mantém KM numérico e aplica o formato visual `Km` (por exemplo, `485 Km`) para que as fórmulas da planilha continuem funcionando.

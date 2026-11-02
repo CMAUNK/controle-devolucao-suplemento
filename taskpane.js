@@ -133,7 +133,9 @@ function renderSampleRows() {
 }
 
 function normalizeHeader(value) {
-  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  const normalized = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  if (["CTE S NAO RECEBIDO", "CTE S NAO RECEBIDOS"].includes(normalized)) return "CTE S";
+  return normalized;
 }
 
 function personRecordKey(number, cpf, name = "") {
