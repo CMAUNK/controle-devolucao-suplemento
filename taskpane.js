@@ -14,8 +14,12 @@ Office.onReady(() => {
     populateFillColumns();
   });
   $("actionMode").addEventListener("change", renderActionMode);
-  $("fillColumn").addEventListener("change", hideFillReview);
+  $("fillColumns").addEventListener("change", () => {
+    hideFillReview();
+    updateFillControls();
+  });
   $("overwriteValues").addEventListener("change", hideFillReview);
+  $("noCteList").addEventListener("change", updateFillControls);
   $("addRows").addEventListener("click", prepareInsertion);
   $("insertDirect").addEventListener("click", insertDirectly);
   $("clearSelection").addEventListener("click", clearSelection);
@@ -121,20 +125,38 @@ function renderActionMode() {
 function populateFillColumns() {
   const keyName = $("base").value === "100km" ? "SM" : "MANIFESTO";
   const candidates = state.headers.filter((header) => normalizeHeader(header) !== normalizeHeader(keyName));
-  const select = $("fillColumn");
-  const previousValue = select.value;
-  select.replaceChildren();
+  const container = $("fillColumns");
+  const previouslySelected = new Set([...container.querySelectorAll("input:checked")].map((input) => normalizeHeader(input.value)));
+  container.replaceChildren();
   for (const header of candidates) {
-    const option = document.createElement("option");
-    option.value = header;
-    option.textContent = header;
-    select.appendChild(option);
+    const label = document.createElement("label");
+    label.className = "check-option";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = header;
+    checkbox.disabled = !state.records.length || state.importing;
+    const normalized = normalizeHeader(header);
+    checkbox.checked = previouslySelected.size
+      ? previouslySelected.has(normalized)
+      : ["VALOR", "CTE S"].includes(normalized);
+    const text = document.createElement("span");
+    text.textContent = header;
+    label.append(checkbox, text);
+    container.appendChild(label);
   }
-  const valueOption = candidates.find((header) => normalizeHeader(header) === "VALOR");
-  if (valueOption) select.value = valueOption;
-  else if (candidates.includes(previousValue)) select.value = previousValue;
-  select.disabled = candidates.length === 0 || !state.records.length;
-  $("checkFill").disabled = select.disabled || !state.records.length;
+  updateFillControls();
+}
+
+function selectedFillHeaders() {
+  return [...$("fillColumns").querySelectorAll("input:checked")].map((input) => input.value);
+}
+
+function updateFillControls() {
+  const selected = selectedFillHeaders();
+  $("checkFill").disabled = !state.records.length || !selected.length || state.importing;
+  $("fillColumns").querySelectorAll("input").forEach((input) => { input.disabled = !state.records.length || state.importing; });
+  $("noCteList").querySelectorAll("input").forEach((input) => { input.disabled = state.importing; });
+  $("confirmFill").disabled = state.importing;
 }
 
 function renderSampleRows() {
@@ -546,7 +568,11 @@ function hideFillReview() {
   state.fillPlan = null;
   $("fillReview").replaceChildren();
   $("fillReview").classList.add("hidden");
+  $("noCteWarning").classList.add("hidden");
+  $("noCteText").textContent = "";
+  $("noCteList").replaceChildren();
   $("fillConfirmActions").classList.add("hidden");
+  updateFillControls();
 }
 
 function normalizedRecordId(value) {
@@ -566,10 +592,11 @@ async function inspectColumnFill(apply = false) {
   const sheetName = base === "100km" ? "BASE" : (base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO");
   const keyName = base === "100km" ? "SM" : "MANIFESTO";
   const inputKeyHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(keyName));
-  const selectedHeader = $("fillColumn").value;
-  const inputValueHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(selectedHeader));
+  const selectedHeaders = selectedFillHeaders();
   if (!inputKeyHeader) throw new Error("O arquivo não contém a coluna " + keyName + ".");
-  if (!inputValueHeader) throw new Error("Selecione uma coluna que exista no arquivo.");
+  if (!selectedHeaders.length) throw new Error("Marque pelo menos uma coluna para preencher.");
+  const inputHeaders = selectedHeaders.map((selected) => state.headers.find((header) => normalizeHeader(header) === normalizeHeader(selected)));
+  if (inputHeaders.some((header) => !header)) throw new Error("Uma das colunas selecionadas não existe no arquivo.");
   return Excel.run(async (context) => {
     const worksheets = context.workbook.worksheets;
     worksheets.load("items/name");
@@ -593,22 +620,28 @@ async function inspectColumnFill(apply = false) {
     const headers = headerRange.values[0].map((value) => String(value || "").trim());
     const columnMap = new Map(headers.map((header, index) => [normalizeHeader(header), index]));
     const keyColumn = columnMap.get(normalizeHeader(keyName));
-    const valueColumn = columnMap.get(normalizeHeader(selectedHeader));
     if (keyColumn === undefined) throw new Error("Não encontrei a coluna " + keyName + " na tabela.");
-    if (valueColumn === undefined) throw new Error("A coluna " + selectedHeader + " não existe na tabela de destino.");
+    const targetColumns = new Map();
+    for (let i = 0; i < selectedHeaders.length; i += 1) {
+      const targetColumn = columnMap.get(normalizeHeader(selectedHeaders[i]));
+      if (targetColumn === undefined) throw new Error("A coluna " + selectedHeaders[i] + " não existe na tabela de destino.");
+      targetColumns.set(inputHeaders[i], targetColumn);
+    }
 
     const existingCount = countResult.value;
-    let idValues = [], currentValues = [], currentFormulas = [], body = null;
+    let idValues = [], body = null;
+    const columnData = new Map();
     if (existingCount > 0) {
       body = table.getDataBodyRange();
       const ids = table.columns.getItemAt(keyColumn).getDataBodyRange();
-      const values = table.columns.getItemAt(valueColumn).getDataBodyRange();
       ids.load("values");
-      values.load("values,formulas");
-      await syncExcelStage(context, "localizar os manifestos e ler a coluna selecionada");
+      for (const inputHeader of inputHeaders) {
+        const values = table.columns.getItemAt(targetColumns.get(inputHeader)).getDataBodyRange();
+        values.load("values,formulas");
+        columnData.set(inputHeader, values);
+      }
+      await syncExcelStage(context, "localizar os manifestos e ler as colunas selecionadas");
       idValues = ids.values.flat();
-      currentValues = values.values.flat();
-      currentFormulas = values.formulas.flat();
     }
 
     const targetRows = new Map();
@@ -620,45 +653,65 @@ async function inspectColumnFill(apply = false) {
     });
     const sourceValues = new Map();
     const sourceConflicts = new Set();
-    let missingInputValues = 0;
+    const hasCtes = new Map();
+    const missingInputValues = Object.fromEntries(inputHeaders.map((header) => [header, 0]));
+    const cteSelected = inputHeaders.some((header) => normalizeHeader(header) === "CTE S");
     for (const record of state.records) {
       const key = normalizedRecordId(record[inputKeyHeader]);
       if (!key) throw new Error("Há uma linha sem " + keyName + "; revise o arquivo.");
-      const rawValue = record[inputValueHeader];
-      if (rawValue === "" || rawValue == null) { missingInputValues += 1; continue; }
-      const value = convertColumnValue(inputValueHeader, rawValue);
-      if (value === "" || value == null || (typeof value === "number" && !Number.isFinite(value))) { missingInputValues += 1; continue; }
-      if (sourceValues.has(key) && String(sourceValues.get(key)) !== String(value)) sourceConflicts.add(key);
-      else sourceValues.set(key, value);
+      if (!sourceValues.has(key)) sourceValues.set(key, new Map());
+      if (cteSelected) hasCtes.set(key, hasCtes.get(key) || Boolean(String(record[inputHeaders.find((header) => normalizeHeader(header) === "CTE S")] ?? "").trim()));
+      for (const inputHeader of inputHeaders) {
+        const rawValue = record[inputHeader];
+        if (rawValue === "" || rawValue == null) { missingInputValues[inputHeader] += 1; continue; }
+        const value = convertColumnValue(inputHeader, rawValue);
+        if (value === "" || value == null || (typeof value === "number" && !Number.isFinite(value))) { missingInputValues[inputHeader] += 1; continue; }
+        const sourceKey = key + "\u001f" + normalizeHeader(inputHeader);
+        const valuesForKey = sourceValues.get(key);
+        if (valuesForKey.has(inputHeader) && String(valuesForKey.get(inputHeader)) !== String(value)) sourceConflicts.add(sourceKey);
+        else valuesForKey.set(inputHeader, value);
+      }
     }
 
     const updates = [];
     let notFound = 0, ambiguous = 0, protectedByFormula = 0, alreadyFilled = 0, unchanged = 0;
-    for (const [key, value] of sourceValues) {
-      if (sourceConflicts.has(key)) { ambiguous += 1; continue; }
+    for (const [key, valuesForKey] of sourceValues) {
       const rows = targetRows.get(key) || [];
       if (!rows.length) { notFound += 1; continue; }
       if (rows.length !== 1) { ambiguous += 1; continue; }
       const rowIndex = rows[0];
-      const formula = currentFormulas[rowIndex];
-      if (typeof formula === "string" && formula.startsWith("=")) { protectedByFormula += 1; continue; }
-      const current = currentValues[rowIndex];
-      const isBlank = current === null || current === undefined || String(current).trim() === "";
-      if (!isBlank && String(current) === String(value)) { unchanged += 1; continue; }
-      if (!isBlank && !$("overwriteValues").checked) { alreadyFilled += 1; continue; }
-      updates.push({ rowIndex, key, value, current: current ?? "" });
+      for (const inputHeader of inputHeaders) {
+        const value = valuesForKey.get(inputHeader);
+        if (value === undefined) continue;
+        if (sourceConflicts.has(key + "\u001f" + normalizeHeader(inputHeader))) { ambiguous += 1; continue; }
+        const data = columnData.get(inputHeader);
+        const formula = data.formulas.flat()[rowIndex];
+        if (typeof formula === "string" && formula.startsWith("=")) { protectedByFormula += 1; continue; }
+        const current = data.values.flat()[rowIndex];
+        const isBlank = current === null || current === undefined || String(current).trim() === "";
+        if (!isBlank && String(current) === String(value)) { unchanged += 1; continue; }
+        if (!isBlank && !$("overwriteValues").checked) { alreadyFilled += 1; continue; }
+        updates.push({ rowIndex, key, value, current: current ?? "", inputHeader, targetColumn: targetColumns.get(inputHeader) });
+      }
     }
+    const keysWithOtherUpdates = new Set(updates.filter((item) => normalizeHeader(item.inputHeader) !== "CTE S").map((item) => item.key));
+    const noCteManifestos = cteSelected
+      ? [...hasCtes].filter(([key, found]) => !found && targetRows.has(key) && keysWithOtherUpdates.has(key)).map(([key]) => key).sort()
+      : [];
     const plan = {
-      sheetName, keyName, selectedHeader, sourceCount: sourceValues.size,
-      matched: updates.length + alreadyFilled + unchanged + protectedByFormula,
+      sheetName, keyName, selectedHeaders, sourceCount: sourceValues.size,
       updates, notFound, ambiguous, protectedByFormula, alreadyFilled, unchanged,
-      missingInputValues,
-      signature: JSON.stringify({ headers, updates, notFound, ambiguous, protectedByFormula, alreadyFilled, unchanged, missingInputValues }),
+      missingInputValues, noCteManifestos,
+      signature: JSON.stringify({ headers, updates, notFound, ambiguous, protectedByFormula, alreadyFilled, unchanged, missingInputValues, noCteManifestos }),
     };
     if (apply) {
       if (plan.signature !== state.fillPlan?.signature) return { plan, changed: true };
-      for (const item of plan.updates) body.getCell(item.rowIndex, valueColumn).values = [[item.value]];
-      if (plan.updates.length) await syncExcelStage(context, "preencher somente a coluna " + plan.selectedHeader);
+      const approvedNoCte = new Set([...$("noCteList").querySelectorAll("input:checked")].map((input) => input.value));
+      const skippedNoCte = plan.noCteManifestos.filter((key) => !approvedNoCte.has(key));
+      const updatesToApply = plan.updates.filter((item) => !skippedNoCte.includes(item.key));
+      for (const item of updatesToApply) body.getCell(item.rowIndex, item.targetColumn).values = [[item.value]];
+      if (updatesToApply.length) await syncExcelStage(context, "preencher somente as colunas selecionadas");
+      return { plan, appliedCount: updatesToApply.length, skippedNoCte };
     }
     return { plan };
   });
@@ -669,20 +722,42 @@ function showFillReview(plan) {
   const container = $("fillReview");
   container.replaceChildren();
   addReviewLine(container, "Destino", plan.sheetName);
-  addReviewLine(container, "Coluna que será preenchida", plan.selectedHeader);
-  addReviewLine(container, "Registros existentes que receberão valor", plan.updates.length);
-  addReviewLine(container, "Já preenchidos e preservados", plan.alreadyFilled);
+  addReviewLine(container, "Colunas selecionadas", plan.selectedHeaders.join(", "));
+  addReviewLine(container, "Células que serão preenchidas", plan.updates.length);
+  addReviewLine(container, "Células já preenchidas e preservadas", plan.alreadyFilled);
   addReviewLine(container, "Já estavam iguais", plan.unchanged);
   addReviewLine(container, "Manifestos não encontrados", plan.notFound);
-  addReviewLine(container, "Sem valor no arquivo", plan.missingInputValues);
+  for (const [header, count] of Object.entries(plan.missingInputValues)) {
+    if (count) addReviewLine(container, "Sem valor no arquivo — " + header, count);
+  }
   addReviewLine(container, "Correspondências ambíguas ou com fórmula", plan.ambiguous + plan.protectedByFormula);
   container.classList.remove("hidden");
+  const hasNoCtes = plan.noCteManifestos.length > 0;
+  $("noCteWarning").classList.toggle("hidden", !hasNoCtes);
+  $("noCteText").textContent = hasNoCtes
+    ? "Verifiquei que estes manifestos também não têm CTE’S. Deseja fazer o preenchimento para cada um?"
+    : "";
+  const noCteList = $("noCteList");
+  noCteList.replaceChildren();
+  for (const number of plan.noCteManifestos) {
+    const label = document.createElement("label");
+    label.className = "check-option";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = number;
+    const text = document.createElement("span");
+    text.textContent = "Verifiquei que o manifesto " + number + " também não tem CTE’S. Deseja fazer o preenchimento também?";
+    label.append(checkbox, text);
+    noCteList.appendChild(label);
+  }
   $("fillConfirmActions").classList.toggle("hidden", plan.updates.length === 0);
+  updateFillControls();
 }
 
 async function prepareColumnFill() {
   if (state.importing || !state.records.length) return;
   state.importing = true;
+  updateFillControls();
   $("checkFill").disabled = true;
   clearStatus();
   hideFillReview();
@@ -694,13 +769,14 @@ async function prepareColumnFill() {
     setStatus(error.message || "Não foi possível conferir a coluna.", true);
   } finally {
     state.importing = false;
-    $("checkFill").disabled = !state.records.length || $("fillColumn").disabled;
+    updateFillControls();
   }
 }
 
 async function fillExistingColumn() {
   if (state.importing || !state.fillPlan?.updates.length) return;
   state.importing = true;
+  updateFillControls();
   $("confirmFill").disabled = true;
   $("checkFill").disabled = true;
   clearStatus();
@@ -711,16 +787,19 @@ async function fillExistingColumn() {
       setStatus("A planilha mudou desde a conferência. Revise o novo resumo antes de confirmar.", false);
       return;
     }
-    const completed = state.fillPlan.updates.length;
-    const selectedHeader = state.fillPlan.selectedHeader;
+    const completed = result.appliedCount;
+    const selectedHeaders = state.fillPlan.selectedHeaders.join(", ");
+    const skippedText = result.skippedNoCte.length
+      ? " Manifestos sem CTE’S não preenchidos: " + result.skippedNoCte.join(", ") + "."
+      : "";
     hideFillReview();
-    setStatus(completed + " célula(s) preenchida(s) na coluna " + selectedHeader + ". Os demais campos e linhas foram preservados.", false, true);
+    setStatus(completed + " célula(s) preenchida(s) nas colunas " + selectedHeaders + ". Os demais campos e linhas foram preservados." + skippedText, false, true);
   } catch (error) {
     setStatus(error.message || "Não foi possível preencher a coluna.", true);
   } finally {
     state.importing = false;
     $("confirmFill").disabled = false;
-    $("checkFill").disabled = !state.records.length || $("fillColumn").disabled;
+    updateFillControls();
   }
 }
 

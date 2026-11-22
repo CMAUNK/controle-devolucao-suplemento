@@ -11,7 +11,7 @@ Este suplemento importa no Excel as linhas TSV exportadas pelo aplicativo Contro
 5. Confira o resumo final: linhas inseridas, linhas vazias reutilizadas, novas linhas criadas e fórmulas detectadas.
 6. Use **Limpar arquivo** para remover a seleção e a prévia do painel; isso não apaga linhas da planilha.
 
-Para preencher uma coluna de registros que já existem, escolha **Preencher uma coluna em registros existentes**, selecione a coluna desejada e clique em **Conferir preenchimento**. O suplemento localiza cada linha pelo número do manifesto (ou pela SM na base 100km), altera somente a coluna escolhida e não cria linhas. Por padrão, valores já preenchidos são preservados; a substituição precisa ser marcada explicitamente. Correspondências ambíguas, ausentes ou com fórmula são preservadas e aparecem no resumo.
+Para preencher colunas de registros que já existem, escolha **Preencher colunas em registros existentes**, marque os campos desejados e clique em **Conferir preenchimento**. O suplemento localiza cada linha pelo número do manifesto (ou pela SM na base 100km), altera somente as colunas marcadas e não cria linhas. Por padrão, valores já preenchidos são preservados; a substituição precisa ser marcada explicitamente. Se um manifesto não tiver CTE’S, ele pergunta individualmente se os outros campos selecionados devem ser preenchidos para aquele manifesto. Correspondências ambíguas, ausentes ou com fórmula são preservadas e aparecem no resumo.
 
 O botão **Confirmar e inserir** pula a tela de conferência. Ele insere somente registros novos e ignora os repetidos automaticamente; o resumo final informa quantas linhas foram ignoradas.
 

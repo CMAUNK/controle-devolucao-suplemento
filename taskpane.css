@@ -23,6 +23,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .warning p { margin: 8px 0 0; }
 .check-label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
 .check-label input { width: auto; }
+.column-fieldset { margin: 0; padding: 8px 10px 10px; border: 1px solid #ead5d9; border-radius: 7px; }
+.column-fieldset legend { padding: 0 4px; font-weight: 600; }
+.check-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.check-option { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.check-option input { width: auto; }
 .review-summary { margin-top: 12px; padding-top: 4px; border-top: 1px solid #eee4e6; }
 .hidden { display: none; }
 .note { font-size: 12px; margin-top: 18px; }
