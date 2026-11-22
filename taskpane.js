@@ -1,19 +1,27 @@
 /* global Office, Excel */
 "use strict";
 
-const state = { records: [], headers: [], fileName: "", importing: false, plan: null };
+const state = { records: [], headers: [], fileName: "", importing: false, plan: null, fillPlan: null };
 const $ = (id) => document.getElementById(id);
 
 Office.onReady(() => {
   $("inputFile").addEventListener("change", readSelectedFile);
   $("base").addEventListener("change", () => {
     hideReview();
+    hideFillReview();
     clearStatus();
     renderPreview();
+    populateFillColumns();
   });
+  $("actionMode").addEventListener("change", renderActionMode);
+  $("fillColumn").addEventListener("change", hideFillReview);
+  $("overwriteValues").addEventListener("change", hideFillReview);
   $("addRows").addEventListener("click", prepareInsertion);
   $("insertDirect").addEventListener("click", insertDirectly);
   $("clearSelection").addEventListener("click", clearSelection);
+  $("checkFill").addEventListener("click", prepareColumnFill);
+  $("confirmFill").addEventListener("click", fillExistingColumn);
+  $("cancelFill").addEventListener("click", hideFillReview);
   $("confirmNewOnly").addEventListener("click", () => insertRows("new"));
   $("confirmAll").addEventListener("click", () => insertRows("all"));
   $("cancelReview").addEventListener("click", () => {
@@ -51,6 +59,7 @@ function parseTSV(text) {
 async function readSelectedFile() {
   clearStatus();
   hideReview();
+  hideFillReview();
   const file = $("inputFile").files[0];
   state.records = [];
   state.headers = [];
@@ -58,7 +67,8 @@ async function readSelectedFile() {
   $("addRows").disabled = true;
   $("insertDirect").disabled = true;
   $("clearSelection").disabled = !file;
-  if (!file) { renderPreview(); return; }
+  populateFillColumns();
+  if (!file) { populateFillColumns(); renderPreview(); return; }
   try {
     const parsed = parseTSV(await file.text());
     state.records = parsed.records;
@@ -67,6 +77,7 @@ async function readSelectedFile() {
     $("addRows").disabled = false;
     $("insertDirect").disabled = false;
     $("clearSelection").disabled = false;
+    populateFillColumns();
     renderPreview();
   } catch (error) {
     $("addRows").disabled = true;
@@ -95,6 +106,35 @@ function renderPreview() {
   const destination = is100km ? "BASE" : `BASE-${base.toUpperCase()}`;
   $("preview").textContent = `${state.fileName}\nDestino: ${destination}\nLinhas no arquivo: ${state.records.length}\n${is100km ? "SMs" : "Manifestos"}: ${ids.join(", ") || "não identificados"}\n${is100km ? "KM somados" : "Volumes somados"}: ${total}${is100km ? " Km" : ""}`;
   renderSampleRows();
+}
+
+function renderActionMode() {
+  const fillMode = $("actionMode").value === "fill";
+  $("addRows").classList.toggle("hidden", fillMode);
+  $("insertDirect").classList.toggle("hidden", fillMode);
+  $("fillOptions").classList.toggle("hidden", !fillMode);
+  hideReview();
+  hideFillReview();
+  if (fillMode) populateFillColumns();
+}
+
+function populateFillColumns() {
+  const keyName = $("base").value === "100km" ? "SM" : "MANIFESTO";
+  const candidates = state.headers.filter((header) => normalizeHeader(header) !== normalizeHeader(keyName));
+  const select = $("fillColumn");
+  const previousValue = select.value;
+  select.replaceChildren();
+  for (const header of candidates) {
+    const option = document.createElement("option");
+    option.value = header;
+    option.textContent = header;
+    select.appendChild(option);
+  }
+  const valueOption = candidates.find((header) => normalizeHeader(header) === "VALOR");
+  if (valueOption) select.value = valueOption;
+  else if (candidates.includes(previousValue)) select.value = previousValue;
+  select.disabled = candidates.length === 0 || !state.records.length;
+  $("checkFill").disabled = select.disabled || !state.records.length;
 }
 
 function renderSampleRows() {
@@ -226,11 +266,13 @@ function clearSelection() {
   state.headers = [];
   state.fileName = "";
   hideReview();
+  hideFillReview();
   $("addRows").disabled = true;
   $("insertDirect").disabled = true;
   $("clearSelection").disabled = true;
   clearStatus();
   renderPreview();
+  populateFillColumns();
 }
 
 function ensureFileMatchesBase(base) {
@@ -498,6 +540,188 @@ function showReview(plan) {
   $("confirmNewOnly").textContent = `Inserir somente novos (${plan.newCount})`;
   $("confirmAll").textContent = hasDuplicates ? "Inserir todos" : "Confirmar e inserir";
   $("review").classList.remove("hidden");
+}
+
+function hideFillReview() {
+  state.fillPlan = null;
+  $("fillReview").replaceChildren();
+  $("fillReview").classList.add("hidden");
+  $("fillConfirmActions").classList.add("hidden");
+}
+
+function normalizedRecordId(value) {
+  return String(value ?? "").trim().replace(/\.0+$/, "");
+}
+
+function convertColumnValue(header, value) {
+  const normalized = normalizeHeader(header);
+  if (normalized === "VALOR") return excelAmount(value);
+  if (["DATA DE TRANSFERENCIA", "DT DE TRANSFERENCIA", "DATA"].includes(normalized)) return excelDateSerial(value);
+  return value;
+}
+
+async function inspectColumnFill(apply = false) {
+  const base = $("base").value;
+  ensureFileMatchesBase(base);
+  const sheetName = base === "100km" ? "BASE" : (base === "recebendo" ? "BASE-RECEBENDO" : "BASE-EXPEDINDO");
+  const keyName = base === "100km" ? "SM" : "MANIFESTO";
+  const inputKeyHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(keyName));
+  const selectedHeader = $("fillColumn").value;
+  const inputValueHeader = state.headers.find((header) => normalizeHeader(header) === normalizeHeader(selectedHeader));
+  if (!inputKeyHeader) throw new Error("O arquivo não contém a coluna " + keyName + ".");
+  if (!inputValueHeader) throw new Error("Selecione uma coluna que exista no arquivo.");
+  return Excel.run(async (context) => {
+    const worksheets = context.workbook.worksheets;
+    worksheets.load("items/name");
+    await syncExcelStage(context, "listar as abas da pasta de trabalho");
+    const expectedSheetName = normalizeHeader(sheetName);
+    const matchingSheets = worksheets.items.filter((item) => normalizeHeader(item.name) === expectedSheetName);
+    if (!matchingSheets.length) throw new Error("Não encontrei a aba " + sheetName + ".");
+    if (matchingSheets.length > 1) throw new Error("Há mais de uma aba com nome equivalente a " + sheetName + ".");
+
+    const sheet = worksheets.getItem(matchingSheets[0].name);
+    const tables = sheet.tables;
+    tables.load("items/name");
+    await syncExcelStage(context, "localizar a tabela na aba " + matchingSheets[0].name);
+    if (tables.items.length !== 1) throw new Error(tables.items.length ? "Há mais de uma tabela na aba " + sheetName + "." : "Não encontrei uma tabela na aba " + sheetName + ".");
+
+    const table = tables.getItemAt(0);
+    const headerRange = table.getHeaderRowRange();
+    headerRange.load("values");
+    const countResult = table.rows.getCount();
+    await syncExcelStage(context, "ler os cabeçalhos e a quantidade de linhas da tabela");
+    const headers = headerRange.values[0].map((value) => String(value || "").trim());
+    const columnMap = new Map(headers.map((header, index) => [normalizeHeader(header), index]));
+    const keyColumn = columnMap.get(normalizeHeader(keyName));
+    const valueColumn = columnMap.get(normalizeHeader(selectedHeader));
+    if (keyColumn === undefined) throw new Error("Não encontrei a coluna " + keyName + " na tabela.");
+    if (valueColumn === undefined) throw new Error("A coluna " + selectedHeader + " não existe na tabela de destino.");
+
+    const existingCount = countResult.value;
+    let idValues = [], currentValues = [], currentFormulas = [], body = null;
+    if (existingCount > 0) {
+      body = table.getDataBodyRange();
+      const ids = table.columns.getItemAt(keyColumn).getDataBodyRange();
+      const values = table.columns.getItemAt(valueColumn).getDataBodyRange();
+      ids.load("values");
+      values.load("values,formulas");
+      await syncExcelStage(context, "localizar os manifestos e ler a coluna selecionada");
+      idValues = ids.values.flat();
+      currentValues = values.values.flat();
+      currentFormulas = values.formulas.flat();
+    }
+
+    const targetRows = new Map();
+    idValues.forEach((value, rowIndex) => {
+      const key = normalizedRecordId(value);
+      if (!key) return;
+      if (!targetRows.has(key)) targetRows.set(key, []);
+      targetRows.get(key).push(rowIndex);
+    });
+    const sourceValues = new Map();
+    const sourceConflicts = new Set();
+    let missingInputValues = 0;
+    for (const record of state.records) {
+      const key = normalizedRecordId(record[inputKeyHeader]);
+      if (!key) throw new Error("Há uma linha sem " + keyName + "; revise o arquivo.");
+      const rawValue = record[inputValueHeader];
+      if (rawValue === "" || rawValue == null) { missingInputValues += 1; continue; }
+      const value = convertColumnValue(inputValueHeader, rawValue);
+      if (value === "" || value == null || (typeof value === "number" && !Number.isFinite(value))) { missingInputValues += 1; continue; }
+      if (sourceValues.has(key) && String(sourceValues.get(key)) !== String(value)) sourceConflicts.add(key);
+      else sourceValues.set(key, value);
+    }
+
+    const updates = [];
+    let notFound = 0, ambiguous = 0, protectedByFormula = 0, alreadyFilled = 0, unchanged = 0;
+    for (const [key, value] of sourceValues) {
+      if (sourceConflicts.has(key)) { ambiguous += 1; continue; }
+      const rows = targetRows.get(key) || [];
+      if (!rows.length) { notFound += 1; continue; }
+      if (rows.length !== 1) { ambiguous += 1; continue; }
+      const rowIndex = rows[0];
+      const formula = currentFormulas[rowIndex];
+      if (typeof formula === "string" && formula.startsWith("=")) { protectedByFormula += 1; continue; }
+      const current = currentValues[rowIndex];
+      const isBlank = current === null || current === undefined || String(current).trim() === "";
+      if (!isBlank && String(current) === String(value)) { unchanged += 1; continue; }
+      if (!isBlank && !$("overwriteValues").checked) { alreadyFilled += 1; continue; }
+      updates.push({ rowIndex, key, value, current: current ?? "" });
+    }
+    const plan = {
+      sheetName, keyName, selectedHeader, sourceCount: sourceValues.size,
+      matched: updates.length + alreadyFilled + unchanged + protectedByFormula,
+      updates, notFound, ambiguous, protectedByFormula, alreadyFilled, unchanged,
+      missingInputValues,
+      signature: JSON.stringify({ headers, updates, notFound, ambiguous, protectedByFormula, alreadyFilled, unchanged, missingInputValues }),
+    };
+    if (apply) {
+      if (plan.signature !== state.fillPlan?.signature) return { plan, changed: true };
+      for (const item of plan.updates) body.getCell(item.rowIndex, valueColumn).values = [[item.value]];
+      if (plan.updates.length) await syncExcelStage(context, "preencher somente a coluna " + plan.selectedHeader);
+    }
+    return { plan };
+  });
+}
+
+function showFillReview(plan) {
+  state.fillPlan = plan;
+  const container = $("fillReview");
+  container.replaceChildren();
+  addReviewLine(container, "Destino", plan.sheetName);
+  addReviewLine(container, "Coluna que será preenchida", plan.selectedHeader);
+  addReviewLine(container, "Registros existentes que receberão valor", plan.updates.length);
+  addReviewLine(container, "Já preenchidos e preservados", plan.alreadyFilled);
+  addReviewLine(container, "Já estavam iguais", plan.unchanged);
+  addReviewLine(container, "Manifestos não encontrados", plan.notFound);
+  addReviewLine(container, "Sem valor no arquivo", plan.missingInputValues);
+  addReviewLine(container, "Correspondências ambíguas ou com fórmula", plan.ambiguous + plan.protectedByFormula);
+  container.classList.remove("hidden");
+  $("fillConfirmActions").classList.toggle("hidden", plan.updates.length === 0);
+}
+
+async function prepareColumnFill() {
+  if (state.importing || !state.records.length) return;
+  state.importing = true;
+  $("checkFill").disabled = true;
+  clearStatus();
+  hideFillReview();
+  try {
+    const result = await inspectColumnFill();
+    showFillReview(result.plan);
+    setStatus("Confira a coluna e a quantidade de células antes de preencher. Nenhuma linha será adicionada.", false);
+  } catch (error) {
+    setStatus(error.message || "Não foi possível conferir a coluna.", true);
+  } finally {
+    state.importing = false;
+    $("checkFill").disabled = !state.records.length || $("fillColumn").disabled;
+  }
+}
+
+async function fillExistingColumn() {
+  if (state.importing || !state.fillPlan?.updates.length) return;
+  state.importing = true;
+  $("confirmFill").disabled = true;
+  $("checkFill").disabled = true;
+  clearStatus();
+  try {
+    const result = await inspectColumnFill(true);
+    if (result.changed) {
+      showFillReview(result.plan);
+      setStatus("A planilha mudou desde a conferência. Revise o novo resumo antes de confirmar.", false);
+      return;
+    }
+    const completed = state.fillPlan.updates.length;
+    const selectedHeader = state.fillPlan.selectedHeader;
+    hideFillReview();
+    setStatus(completed + " célula(s) preenchida(s) na coluna " + selectedHeader + ". Os demais campos e linhas foram preservados.", false, true);
+  } catch (error) {
+    setStatus(error.message || "Não foi possível preencher a coluna.", true);
+  } finally {
+    state.importing = false;
+    $("confirmFill").disabled = false;
+    $("checkFill").disabled = !state.records.length || $("fillColumn").disabled;
+  }
 }
 
 async function prepareInsertion() {

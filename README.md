@@ -11,6 +11,8 @@ Este suplemento importa no Excel as linhas TSV exportadas pelo aplicativo Contro
 5. Confira o resumo final: linhas inseridas, linhas vazias reutilizadas, novas linhas criadas e fórmulas detectadas.
 6. Use **Limpar arquivo** para remover a seleção e a prévia do painel; isso não apaga linhas da planilha.
 
+Para preencher uma coluna de registros que já existem, escolha **Preencher uma coluna em registros existentes**, selecione a coluna desejada e clique em **Conferir preenchimento**. O suplemento localiza cada linha pelo número do manifesto (ou pela SM na base 100km), altera somente a coluna escolhida e não cria linhas. Por padrão, valores já preenchidos são preservados; a substituição precisa ser marcada explicitamente. Correspondências ambíguas, ausentes ou com fórmula são preservadas e aparecem no resumo.
+
 O botão **Confirmar e inserir** pula a tela de conferência. Ele insere somente registros novos e ignora os repetidos automaticamente; o resumo final informa quantas linhas foram ignoradas.
 
 O destino 100km é a aba `BASE`, identificada pelo cabeçalho `SM`. Motorista e ajudante podem ser importados em linhas separadas com a mesma SM; o suplemento verifica duplicidade pelo par SM + CPF, de modo que pessoas diferentes da mesma viagem não sejam tratadas como duplicadas. O suplemento associa dados pelos cabeçalhos e escreve na pasta de trabalho ativa pelo Office JavaScript API. Ele não envia o conteúdo do TSV ou da planilha para um servidor. O código hospedado aqui é público; não inclua arquivos de dados, PDFs, credenciais ou tokens neste repositório.
