@@ -134,7 +134,9 @@ function renderSampleRows() {
 
 function normalizeHeader(value) {
   const normalized = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
-  if (["CTE S NAO RECEBIDO", "CTE S NAO RECEBIDOS"].includes(normalized)) return "CTE S";
+  if (["CTE S FALTANTE", "CTE S NAO RECEBIDO", "CTE S NAO RECEBIDOS"].includes(normalized)) return "CTE S";
+  if (["DATA DE TRASFERENCIA", "DATA DE TRANSFERENCIA"].includes(normalized)) return "DATA DE TRANSFERENCIA";
+  if (["DT DE TRASFERENCIA", "DT DE TRANSFERENCIA"].includes(normalized)) return "DT DE TRANSFERENCIA";
   return normalized;
 }
 
@@ -183,6 +185,21 @@ function excelDateSerial(value) {
   return (date.getTime() - Date.UTC(1899, 11, 30)) / 86400000;
 }
 
+function excelAmount(value) {
+  if (typeof value === "number") return value;
+  let token = String(value ?? "").trim().replace(/[^\d,.-]/g, "");
+  if (!token) return value;
+  if (token.includes(",") && token.includes(".")) {
+    token = token.lastIndexOf(",") > token.lastIndexOf(".")
+      ? token.replace(/\./g, "").replace(",", ".")
+      : token.replace(/,/g, "");
+  } else if (token.includes(",")) {
+    token = token.replace(",", ".");
+  }
+  const amount = Number(token);
+  return Number.isFinite(amount) ? amount : value;
+}
+
 function hideReview() {
   state.plan = null;
   $("review").classList.add("hidden");
@@ -223,7 +240,7 @@ function ensureFileMatchesBase(base) {
     if (missing.length) throw new Error(`Este arquivo não parece ser da planilha 100km. Não encontrei: ${missing.join(", ")}.`);
     return;
   }
-  const expected = base === "recebendo" ? "DATA DE TRASFERENCIA" : "DT DE TRASFERENCIA";
+  const expected = base === "recebendo" ? "DATA DE TRANSFERENCIA" : "DT DE TRANSFERENCIA";
   if (!state.headers.some((header) => normalizeHeader(header) === normalizeHeader(expected))) {
     throw new Error(`O arquivo não corresponde à base ${base === "recebendo" ? "RECEBENDO" : "EXPEDINDO"}. Selecione o TSV dessa base.`);
   }
@@ -372,7 +389,9 @@ async function inspectOrInsert(mode = null) {
         const targetColumn = columnMap.get(normalizeHeader(inputHeader));
         if (targetColumn === undefined || rawValue === "" || rawValue == null) continue;
         let value = rawValue;
-        if (["DATA DE TRASFERENCIA", "DT DE TRASFERENCIA", "DATA"].includes(normalizeHeader(inputHeader))) value = excelDateSerial(rawValue);
+        const normalizedHeader = normalizeHeader(inputHeader);
+        if (["DATA DE TRANSFERENCIA", "DT DE TRANSFERENCIA", "DATA"].includes(normalizedHeader)) value = excelDateSerial(rawValue);
+        if (normalizedHeader === "VALOR") value = excelAmount(rawValue);
         values.set(targetColumn, value);
       }
       return values;
